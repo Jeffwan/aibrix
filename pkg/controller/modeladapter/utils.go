@@ -19,13 +19,14 @@ package modeladapter
 import (
 	"errors"
 	"fmt"
+
 	"net/url"
 	"os"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-
 	modelv1alpha1 "github.com/aibrix/aibrix/api/model/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func validateModelAdapter(instance *modelv1alpha1.ModelAdapter) error {
@@ -168,4 +169,15 @@ func Difference(a, b []string) []string {
 	}
 
 	return diff
+}
+
+// NewCondition creates a new replicaset condition.
+func NewCondition(condType string, status metav1.ConditionStatus, reason, msg string) metav1.Condition {
+	return metav1.Condition{
+		Type:               condType,
+		Status:             status,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            msg,
+	}
 }
