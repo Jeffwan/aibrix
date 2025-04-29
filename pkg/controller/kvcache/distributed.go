@@ -79,7 +79,7 @@ func (r *KVCacheReconciler) reconcileDistributedMode(ctx context.Context, kvCach
 
 func buildKVCacheWatcherPod(kvCache *orchestrationv1alpha1.KVCache) *corev1.Pod {
 	params := getKVCacheParams(kvCache.GetAnnotations())
-	kvCacheWatcherPodImage := "aibrix/kvcache-watcher:nightly"
+	kvCacheWatcherPodImage := "kvcache/kvcache-watcher:nightly"
 	if params.ContainerRegistry != "" {
 		kvCacheWatcherPodImage = fmt.Sprintf("%s/%s", params.ContainerRegistry, kvCacheWatcherPodImage)
 	}

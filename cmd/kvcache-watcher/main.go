@@ -74,15 +74,15 @@ type SlotRange struct {
 }
 
 type NodeInfo struct {
-	Name  string      `json:"name"`
+	//Name  string      `json:"name"`
 	Addr  string      `json:"addr"`
 	Port  int         `json:"port"`
 	Slots []SlotRange `json:"slots"`
 }
 
 type ClusterNodes struct {
-	Nodes   []NodeInfo `json:"nodes"`
-	Version int64      `json:"version"`
+	Nodes []NodeInfo `json:"nodes"`
+	//Version int64      `json:"version"`
 }
 
 type hasher struct{}
@@ -285,7 +285,7 @@ func syncPods(ctx context.Context, rdb *redis.Client, informer cache.SharedIndex
 		}
 
 		currentNodes = append(currentNodes, NodeInfo{
-			Name:  pod.Name,
+			//Name:  pod.Name,
 			Addr:  rdmaIP,
 			Port:  kvCacheServerRDMAPort,
 			Slots: mergeSlots(nodeSlots[pod.Name], totalSlots),
@@ -303,17 +303,18 @@ func syncPods(ctx context.Context, rdb *redis.Client, informer cache.SharedIndex
 
 	needUpdate := !isNodeListEqual(currentNodes, existingClusterNodes.Nodes)
 	if !needUpdate {
-		klog.Infof("Node list unchanged, skipping update, current version: %d", existingClusterNodes.Version)
+		//klog.Infof("Node list unchanged, skipping update, current version: %d", existingClusterNodes.Version)
+		klog.Infof("Node list unchanged, skipping update")
 	}
 
-	newVersion := int64(1)
-	if val != "" {
-		newVersion = existingClusterNodes.Version + 1
-	}
+	//newVersion := int64(1)
+	//if val != "" {
+	//	newVersion = existingClusterNodes.Version + 1
+	//}
 
 	newData := ClusterNodes{
-		Nodes:   currentNodes,
-		Version: newVersion,
+		Nodes: currentNodes,
+		//Version: newVersion,
 	}
 
 	jsonData, err := json.Marshal(newData)
@@ -328,7 +329,8 @@ func syncPods(ctx context.Context, rdb *redis.Client, informer cache.SharedIndex
 		return fmt.Errorf("redis transaction failed: %v", err)
 	}
 
-	klog.InfoS("Successfully updated cluster nodes", "version", newVersion, "nodeCount", len(currentNodes))
+	//klog.InfoS("Successfully updated cluster nodes", "version", newVersion, "nodeCount", len(currentNodes))
+	klog.InfoS("Successfully updated cluster nodes", "nodeCount", len(currentNodes))
 	return nil
 }
 
@@ -498,11 +500,11 @@ func isNodeListEqual(a, b []NodeInfo) bool {
 
 	nodeMap := make(map[string]NodeInfo)
 	for _, n := range a {
-		nodeMap[n.Name] = n
+		nodeMap[n.Addr] = n
 	}
 
 	for _, n := range b {
-		existing, ok := nodeMap[n.Name]
+		existing, ok := nodeMap[n.Addr]
 		if !ok || !slotRangesEqual(existing.Slots, n.Slots) {
 			return false
 		}
