@@ -55,7 +55,7 @@ const KVCacheLabelKeyRole = "kvcache.orchestration.aibrix.ai/role"
 const KVCacheLabelValueRoleCache = "cache"
 const KVCacheLabelValueRoleMetadata = "metadata"
 const KVCacheLabelValueRoleKVWatcher = "kvwatcher"
-const RedisNodeMemberKey = "hpkv_nodes"
+const RedisNodeMemberKey = "hpkv_cluster_metadata"
 
 const networkStatusAnnotation = "k8s.volcengine.com/network-status"
 
