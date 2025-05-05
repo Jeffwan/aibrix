@@ -80,8 +80,10 @@ func TestReconcileMetadataService(t *testing.T) {
 			},
 			Spec: v1alpha1.KVCacheSpec{
 				Metadata: &v1alpha1.MetadataSpec{
-					Redis: &v1alpha1.RedisConfig{
-						Replicas: 1,
+					Redis: &v1alpha1.MetadataConfig{
+						Runtime: &v1alpha1.RuntimeSpec{
+							Replicas: 1,
+						},
 					},
 				},
 			},
@@ -130,8 +132,10 @@ func TestReconcileRedisService_SingleReplicaAllowed(t *testing.T) {
 		},
 		Spec: v1alpha1.KVCacheSpec{
 			Metadata: &v1alpha1.MetadataSpec{
-				Redis: &v1alpha1.RedisConfig{
-					Replicas: 1,
+				Redis: &v1alpha1.MetadataConfig{
+					Runtime: &v1alpha1.RuntimeSpec{
+						Replicas: 1,
+					},
 				},
 			},
 		},

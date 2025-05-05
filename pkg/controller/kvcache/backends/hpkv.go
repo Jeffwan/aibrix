@@ -27,7 +27,6 @@ import (
 	"github.com/vllm-project/aibrix/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -94,6 +93,7 @@ func (HpKVBackend) BuildService(kvCache *orchestrationv1alpha1.KVCache) *corev1.
 
 func buildKVCacheWatcherPod(kvCache *orchestrationv1alpha1.KVCache) *corev1.Pod {
 	params := getKVCacheParams(kvCache.GetAnnotations())
+	// TODO: remove
 	kvCacheWatcherPodImage := "aibrix/kvcache-watcher:nightly"
 	if params.ContainerRegistry != "" {
 		kvCacheWatcherPodImage = fmt.Sprintf("%s/%s", params.ContainerRegistry, kvCacheWatcherPodImage)
@@ -217,7 +217,7 @@ func buildCacheStatefulSet(kvCache *orchestrationv1alpha1.KVCache) *appsv1.State
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas: &kvCache.Spec.Replicas,
+			Replicas: &kvCache.Spec.Cache.Replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					constants.KVCacheLabelKeyIdentifier: kvCache.Name,
@@ -264,18 +264,8 @@ func buildCacheStatefulSet(kvCache *orchestrationv1alpha1.KVCache) *appsv1.State
 									echo "Binding to RDMA IP: $AIBRIX_KVCACHE_RDMA_IP"
 									./hpkv-server %s`), kvCacheServerArgsStr),
 							},
-							Env: append(envs, kvCache.Spec.Cache.Env...),
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:                             resource.MustParse(kvCache.Spec.Cache.CPU),
-									corev1.ResourceMemory:                          resource.MustParse(kvCache.Spec.Cache.Memory),
-									corev1.ResourceName("vke.volcengine.com/rdma"): resource.MustParse("1"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse(kvCache.Spec.Cache.CPU),
-									corev1.ResourceMemory: resource.MustParse(kvCache.Spec.Cache.Memory),
-								},
-							},
+							Env:             append(envs, kvCache.Spec.Cache.Env...),
+							Resources:       kvCache.Spec.Cache.Resources,
 							ImagePullPolicy: corev1.PullPolicy(kvCache.Spec.Cache.ImagePullPolicy),
 							SecurityContext: &corev1.SecurityContext{
 								// required to use RDMA

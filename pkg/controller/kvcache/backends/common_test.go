@@ -67,12 +67,14 @@ func TestBuildRedisPod(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: orchestrationv1alpha1.KVCacheSpec{
-					Cache: orchestrationv1alpha1.CacheSpec{
+					Cache: orchestrationv1alpha1.RuntimeSpec{
 						Image: tc.cacheImage,
 					},
 					Metadata: &orchestrationv1alpha1.MetadataSpec{
-						Redis: &orchestrationv1alpha1.RedisConfig{
-							Image: tc.overrideImage,
+						Redis: &orchestrationv1alpha1.MetadataConfig{
+							Runtime: &orchestrationv1alpha1.RuntimeSpec{
+								Image: tc.overrideImage,
+							},
 						},
 					},
 				},

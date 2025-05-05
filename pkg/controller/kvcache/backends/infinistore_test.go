@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/vllm-project/aibrix/api/orchestration/v1alpha1"
 	"github.com/vllm-project/aibrix/pkg/constants"
@@ -57,12 +59,22 @@ func TestBuildCacheStatefulSetForInfiniStore(t *testing.T) {
 			UID:       "1234-uid",
 		},
 		Spec: v1alpha1.KVCacheSpec{
-			Replicas: replicas,
-			Cache: v1alpha1.CacheSpec{
+			Cache: v1alpha1.RuntimeSpec{
+				Replicas:        replicas,
 				Image:           "aibrix/infinistore:nightly",
-				CPU:             "2",
-				Memory:          "4Gi",
 				ImagePullPolicy: "Always",
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:                             resource.MustParse("2"),
+						corev1.ResourceMemory:                          resource.MustParse("4Gi"),
+						corev1.ResourceName("vke.volcengine.com/rdma"): resource.MustParse("1"),
+					},
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:                             resource.MustParse("2"),
+						corev1.ResourceMemory:                          resource.MustParse("4Gi"),
+						corev1.ResourceName("vke.volcengine.com/rdma"): resource.MustParse("1"),
+					},
+				},
 			},
 		},
 	}

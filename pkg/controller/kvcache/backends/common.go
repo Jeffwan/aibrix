@@ -32,8 +32,8 @@ import (
 // TODO: pod needs to be changed to statefulsets or deployment in future.
 func buildRedisPod(kvCache *orchestrationv1alpha1.KVCache) *corev1.Pod {
 	image := kvCache.Spec.Cache.Image
-	if kvCache.Spec.Metadata.Redis.Image != "" {
-		image = kvCache.Spec.Metadata.Redis.Image
+	if kvCache.Spec.Metadata.Redis.Runtime.Image != "" {
+		image = kvCache.Spec.Metadata.Redis.Runtime.Image
 	}
 
 	redisPodName := fmt.Sprintf("%s-redis", kvCache.Name)

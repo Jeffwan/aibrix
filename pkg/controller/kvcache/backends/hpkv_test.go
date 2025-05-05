@@ -19,6 +19,8 @@ package backends
 import (
 	"testing"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/vllm-project/aibrix/api/orchestration/v1alpha1"
 	"github.com/vllm-project/aibrix/pkg/constants"
@@ -70,12 +72,22 @@ func TestBuildCacheStatefulSet_HP(t *testing.T) {
 			},
 		},
 		Spec: v1alpha1.KVCacheSpec{
-			Replicas: replicas,
-			Cache: v1alpha1.CacheSpec{
+			Cache: v1alpha1.RuntimeSpec{
+				Replicas:        replicas,
 				Image:           "aibrix/hpkv-server:nightly",
-				CPU:             "4",
-				Memory:          "8Gi",
 				ImagePullPolicy: "Always",
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:                             resource.MustParse("4"),
+						corev1.ResourceMemory:                          resource.MustParse("8Gi"),
+						corev1.ResourceName("vke.volcengine.com/rdma"): resource.MustParse("1"),
+					},
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:                             resource.MustParse("4"),
+						corev1.ResourceMemory:                          resource.MustParse("8Gi"),
+						corev1.ResourceName("vke.volcengine.com/rdma"): resource.MustParse("1"),
+					},
+				},
 			},
 		},
 	}

@@ -27,7 +27,6 @@ import (
 	"github.com/vllm-project/aibrix/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -210,7 +209,7 @@ func buildCacheStatefulSetForInfiniStore(kvCache *orchestrationv1alpha1.KVCache)
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas: &kvCache.Spec.Replicas,
+			Replicas: &kvCache.Spec.Cache.Replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					constants.KVCacheLabelKeyIdentifier: kvCache.Name,
@@ -254,19 +253,8 @@ func buildCacheStatefulSetForInfiniStore(kvCache *orchestrationv1alpha1.KVCache)
 								"infinistore",
 								kvCacheServerArgsStr,
 							},
-							Env: append(envs, kvCache.Spec.Cache.Env...),
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse(kvCache.Spec.Cache.CPU),
-									corev1.ResourceMemory: resource.MustParse(kvCache.Spec.Cache.Memory),
-									// TODO: this should read from KVCache api spec.
-									corev1.ResourceName("vke.volcengine.com/rdma"): resource.MustParse("1"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse(kvCache.Spec.Cache.CPU),
-									corev1.ResourceMemory: resource.MustParse(kvCache.Spec.Cache.Memory),
-								},
-							},
+							Env:             append(envs, kvCache.Spec.Cache.Env...),
+							Resources:       kvCache.Spec.Cache.Resources,
 							ImagePullPolicy: corev1.PullPolicy(kvCache.Spec.Cache.ImagePullPolicy),
 							SecurityContext: &corev1.SecurityContext{
 								// required to use RDMA
