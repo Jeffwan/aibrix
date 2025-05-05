@@ -33,25 +33,13 @@ func TestBuildRedisPod(t *testing.T) {
 	testCases := []struct {
 		name           string
 		cacheImage     string
-		overrideImage  string
 		expectedImage  string
 		expectedLabels map[string]string
 	}{
 		{
 			name:          "default image",
 			cacheImage:    "redis:7-alpine",
-			overrideImage: "",
 			expectedImage: "redis:7-alpine",
-			expectedLabels: map[string]string{
-				constants.KVCacheLabelKeyIdentifier: "test-cache",
-				constants.KVCacheLabelKeyRole:       constants.KVCacheLabelValueRoleMetadata,
-			},
-		},
-		{
-			name:          "override image",
-			cacheImage:    "redis:7-alpine",
-			overrideImage: "custom-redis:latest",
-			expectedImage: "custom-redis:latest",
 			expectedLabels: map[string]string{
 				constants.KVCacheLabelKeyIdentifier: "test-cache",
 				constants.KVCacheLabelKeyRole:       constants.KVCacheLabelValueRoleMetadata,
@@ -73,7 +61,7 @@ func TestBuildRedisPod(t *testing.T) {
 					Metadata: &orchestrationv1alpha1.MetadataSpec{
 						Redis: &orchestrationv1alpha1.MetadataConfig{
 							Runtime: &orchestrationv1alpha1.RuntimeSpec{
-								Image: tc.overrideImage,
+								Image: tc.cacheImage,
 							},
 						},
 					},

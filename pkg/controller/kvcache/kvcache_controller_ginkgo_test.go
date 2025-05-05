@@ -108,6 +108,15 @@ var _ = Describe("KVCache Controller", func() {
 								},
 							},
 						},
+						Service: orchestrationv1alpha1.ServiceSpec{
+							Type: corev1.ClusterIPNone,
+							Ports: []corev1.ServicePort{
+								{
+									Name: "rdma",
+									Port: 12345,
+								},
+							},
+						},
 					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
