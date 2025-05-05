@@ -166,12 +166,21 @@ metadata:
   annotations:
     kvcache.orchestration.aibrix.ai/pod-affinity-workload: llama3-1-8b
 spec:
-  replicas: 1
+  mode: centralized
   service:
     type: ClusterIP
-    port: 9600
-  cacheSpec:
+    ports:
+      - name: service
+        port: 9600
+        targetPort: 9600
+        protocol: TCP
+  cache:
     image: aibrix-container-registry-cn-beijing.cr.volces.com/aibrix/vineyardd:20241120
     imagePullPolicy: IfNotPresent
-    cpu: 8000m
-    memory: 150Gi
+    resources:
+      requests:
+        cpu: "8000m"
+        memory: "150Gi"
+      limits:
+        cpu: "8000m"
+        memory: "150Gi"
