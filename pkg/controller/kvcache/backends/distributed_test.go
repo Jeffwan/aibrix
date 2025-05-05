@@ -64,7 +64,7 @@ func TestReconcileMetadataService(t *testing.T) {
 	t.Run("fails when neither etcd nor redis configured", func(t *testing.T) {
 		kv := &v1alpha1.KVCache{
 			Spec: v1alpha1.KVCacheSpec{
-				Metadata: &v1alpha1.MetadataConfig{},
+				Metadata: &v1alpha1.MetadataSpec{},
 			},
 		}
 		err := r.reconcileMetadataService(context.Background(), kv)
@@ -79,7 +79,7 @@ func TestReconcileMetadataService(t *testing.T) {
 				Namespace: "default",
 			},
 			Spec: v1alpha1.KVCacheSpec{
-				Metadata: &v1alpha1.MetadataConfig{
+				Metadata: &v1alpha1.MetadataSpec{
 					Redis: &v1alpha1.RedisConfig{
 						Replicas: 1,
 					},
@@ -129,7 +129,7 @@ func TestReconcileRedisService_SingleReplicaAllowed(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: v1alpha1.KVCacheSpec{
-			Metadata: &v1alpha1.MetadataConfig{
+			Metadata: &v1alpha1.MetadataSpec{
 				Redis: &v1alpha1.RedisConfig{
 					Replicas: 1,
 				},

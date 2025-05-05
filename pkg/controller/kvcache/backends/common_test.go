@@ -70,7 +70,7 @@ func TestBuildRedisPod(t *testing.T) {
 					Cache: orchestrationv1alpha1.CacheSpec{
 						Image: tc.cacheImage,
 					},
-					Metadata: &orchestrationv1alpha1.MetadataConfig{
+					Metadata: &orchestrationv1alpha1.MetadataSpec{
 						Redis: &orchestrationv1alpha1.RedisConfig{
 							Image: tc.overrideImage,
 						},
