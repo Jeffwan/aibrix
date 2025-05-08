@@ -52,7 +52,7 @@ import (
 const KVCacheLabelKeyIdentifier = "kvcache.orchestration.aibrix.ai/name"
 const KVCacheLabelKeyRole = "kvcache.orchestration.aibrix.ai/role"
 const KVCacheLabelValueRoleCache = "cache"
-const HPKVRedisNodeMemberKey = "hpkv_nodes"
+const HPKVRedisNodeMemberKey = "hpkv_cluster_metadata"
 const InfiniStoreRedisNodeMemberKey = "kvcache_nodes"
 
 const networkStatusAnnotation = "k8s.volcengine.com/network-status"
@@ -78,15 +78,15 @@ type SlotRange struct {
 }
 
 type NodeInfo struct {
-	Name  string      `json:"name"`
+	//Name  string      `json:"name"`
 	Addr  string      `json:"addr"`
 	Port  int         `json:"port"`
 	Slots []SlotRange `json:"slots"`
 }
 
 type ClusterNodes struct {
-	Nodes   []NodeInfo `json:"nodes"`
-	Version int64      `json:"version"`
+	Nodes []NodeInfo `json:"nodes"`
+	//Version int64      `json:"version"`
 }
 
 type hasher struct{}
@@ -389,7 +389,7 @@ func syncPods(
 		}
 
 		currentNodes = append(currentNodes, NodeInfo{
-			Name:  pod.Name,
+			//Name:  pod.Name,
 			Addr:  ip,
 			Port:  kvCacheServerRDMAPort,
 			Slots: mergeSlots(nodeSlots[pod.Name], consistentHashingTotalSlots),
@@ -409,18 +409,19 @@ func syncPods(
 
 	needUpdate := !isNodeListEqual(currentNodes, existingClusterNodes.Nodes)
 	if !needUpdate {
-		klog.Infof("Node list unchanged, skipping update, current version: %d", existingClusterNodes.Version)
+		//klog.Infof("Node list unchanged, skipping update, current version: %d", existingClusterNodes.Version)
+		klog.Infof("Node list unchanged, skipping update")
 		return nil
 	}
 
-	newVersion := int64(1)
-	if val != "" {
-		newVersion = existingClusterNodes.Version + 1
-	}
+	//newVersion := int64(1)
+	//if val != "" {
+	//	newVersion = existingClusterNodes.Version + 1
+	//}
 
 	newData := ClusterNodes{
-		Nodes:   currentNodes,
-		Version: newVersion,
+		Nodes: currentNodes,
+		//Version: newVersion,
 	}
 
 	jsonData, err := json.Marshal(newData)
@@ -435,7 +436,8 @@ func syncPods(
 		return fmt.Errorf("redis transaction failed: %v", err)
 	}
 
-	klog.InfoS("Successfully updated cluster nodes", "version", newVersion, "nodeCount", len(currentNodes))
+	//klog.InfoS("Successfully updated cluster nodes", "version", newVersion, "nodeCount", len(currentNodes))
+	klog.InfoS("Successfully updated cluster nodes", "nodeCount", len(currentNodes))
 	return nil
 }
 
@@ -605,11 +607,11 @@ func isNodeListEqual(a, b []NodeInfo) bool {
 
 	nodeMap := make(map[string]NodeInfo)
 	for _, n := range a {
-		nodeMap[n.Name] = n
+		nodeMap[n.Addr] = n
 	}
 
 	for _, n := range b {
-		existing, ok := nodeMap[n.Name]
+		existing, ok := nodeMap[n.Addr]
 		if !ok || !slotRangesEqual(existing.Slots, n.Slots) {
 			return false
 		}
