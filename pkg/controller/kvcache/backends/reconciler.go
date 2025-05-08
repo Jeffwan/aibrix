@@ -118,6 +118,7 @@ func (r *BaseReconciler) ReconcileStatefulsetObject(ctx context.Context, sts *ap
 		return err
 	}
 
+	klog.InfoS("Coming here 121")
 	// Update the found object and write the result back if there are any changes
 	if needsUpdateStatefulset(sts, found) {
 		found.Spec = sts.Spec
@@ -166,7 +167,7 @@ func needsUpdateStatefulset(sts *appsv1.StatefulSet, found *appsv1.StatefulSet) 
 			}
 		}
 	}
-
+	klog.InfoS("Coming here build stts replicas %d, found sts replicas %d", found.Spec.Replicas, found.Status.Replicas)
 	return !reflect.DeepEqual(sts.Spec.Replicas, found.Spec.Replicas) || imageChanged
 }
 
