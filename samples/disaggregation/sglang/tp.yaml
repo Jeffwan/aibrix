@@ -1,0 +1,100 @@
+
+apiVersion: orchestration.aibrix.ai/v1alpha1
+kind: StormService
+metadata:
+  name: llm-xpyd-tp
+spec:
+  replicas: 2
+  stateful: true
+  selector:
+    matchLabels:
+      app: llm-xpyd-tp
+  template:
+    metadata:
+      labels:
+        app: llm-xpyd-tp
+    spec:
+      roles:
+        - name: prefill
+          replicas: 2
+          stateful: true
+          template:
+            spec:
+              containers:
+                - name: prefill
+                  image: aibrix-cn-beijing.cr.volces.com/aibrix/sglang:v0.4.6-disaggregation-v20250605
+                  command: ["sh", "-c"]
+                  args:
+                    - |
+                      python3 -m sglang.launch_server \
+                        --model-path /models/Qwen2.5-7B-Instruct \
+                        --host 0.0.0.0 \
+                        --port 30000 \
+                        --disaggregation-transfer-backend nixl \
+                        --disaggregation-mode prefill \
+                        --trust-remote-code \
+                        --dist-init-addr "${ROLESET_NAME}-${ROLE_NAME}-${ROLE_TEMPLATE_HASH}-0.llm-xpyd.default.svc.cluster.local:5000" \
+                        --nnodes 2 \
+                        --node-rank $ROLE_REPLICA_INDEX \
+                        --tp-size 2 \
+                        --mem-fraction-static 0.8 \
+                        --pdlb-url http://sglang-pd-sample-minilb:8000 \
+                        --log-level debug
+                  env:
+                    - name: ROLE_TEMPLATE_HASH
+                      valueFrom:
+                        fieldRef:
+                          fieldPath: metadata.labels['role-template-hash']
+                  volumeMounts:
+                    - name: model-vol
+                      mountPath: /models
+                  resources:
+                    limits:
+                      nvidia.com/gpu: 1
+              volumes:
+                - name: model-vol
+                  hostPath:
+                    path: /root/models
+                    type: Directory
+
+        - name: decode
+          replicas: 2
+          stateful: true
+          template:
+            spec:
+              containers:
+                - name: decode
+                  image: aibrix-cn-beijing.cr.volces.com/aibrix/sglang:v0.4.6-disaggregation-v20250605
+                  command: ["sh", "-c"]
+                  args:
+                    - |
+                      python3 -m sglang.launch_server \
+                        --model-path /models/Qwen2.5-7B-Instruct \
+                        --host 0.0.0.0 \
+                        --port 30000 \
+                        --disaggregation-transfer-backend nixl \
+                        --disaggregation-mode decode \
+                        --trust-remote-code \
+                        --dist-init-addr "${ROLESET_NAME}-${ROLE_NAME}-${ROLE_TEMPLATE_HASH}-0.llm-xpyd.default.svc.cluster.local:5000" \
+                        --nnodes 2 \
+                        --node-rank $ROLE_REPLICA_INDEX \
+                        --tp-size 2 \
+                        --mem-fraction-static 0.8 \
+                        --pdlb-url http://sglang-pd-sample-minilb:8000 \
+                        --log-level debug
+                  env:
+                    - name: ROLE_TEMPLATE_HASH
+                      valueFrom:
+                        fieldRef:
+                          fieldPath: metadata.labels['role-template-hash']
+                  volumeMounts:
+                    - name: model-vol
+                      mountPath: /models
+                  resources:
+                    limits:
+                      nvidia.com/gpu: 1
+              volumes:
+                - name: model-vol
+                  hostPath:
+                    path: /root/models
+                    type: Directory

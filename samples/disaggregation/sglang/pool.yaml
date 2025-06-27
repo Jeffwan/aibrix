@@ -1,0 +1,98 @@
+
+apiVersion: orchestration.aibrix.ai/v1alpha1
+kind: StormService
+metadata:
+  name: llm-pool
+spec:
+  replicas: 1
+  stateful: true
+  selector:
+    matchLabels:
+      app: llm-xpyd
+  template:
+    metadata:
+      labels:
+        app: llm-xpyd
+    spec:
+      roles:
+        - name: prefill
+          replicas: 4
+          stateful: true
+          template:
+            spec:
+              containers:
+                - name: prefill
+                  image: aibrix-cn-beijing.cr.volces.com/aibrix/sglang:v0.4.6-disaggregation-v20250605
+                  command: ["python3"]
+                  args:
+                    - -m
+                    - sglang.launch_server
+                    - --model-path
+                    - /models/Qwen2.5-7B-Instruct
+                    - --host
+                    - 0.0.0.0
+                    - --port
+                    - "30000"
+                    - --disaggregation-transfer-backend
+                    - nixl
+                    - --disaggregation-mode
+                    - prefill
+                    - --trust-remote-code
+                    - --mem-fraction-static
+                    - "0.8"
+                    - --pdlb-url
+                    - http://sglang-pd-sample-minilb:8000
+                    - --log-level
+                    - debug
+                  volumeMounts:
+                    - name: model-vol
+                      mountPath: /models
+                  resources:
+                    limits:
+                      nvidia.com/gpu: 1
+              volumes:
+                - name: model-vol
+                  hostPath:
+                    path: /root/models
+                    type: Directory
+
+        - name: decode
+          replicas: 3
+          stateful: true
+          template:
+            spec:
+              containers:
+                - name: decode
+                  image: aibrix-cn-beijing.cr.volces.com/aibrix/sglang:v0.4.6-disaggregation-v20250605
+                  command: ["python3"]
+                  args:
+                    - -m
+                    - sglang.launch_server
+                    - --model-path
+                    - /models/Qwen2.5-7B-Instruct
+                    - --host
+                    - 0.0.0.0
+                    - --port
+                    - "30000"
+                    - --disaggregation-transfer-backend
+                    - nixl
+                    - --disaggregation-mode
+                    - decode
+                    - --trust-remote-code
+                    - --mem-fraction-static
+                    - "0.8"
+                    - --pdlb-url
+                    - http://sglang-pd-sample-minilb:8000
+                    - --log-level
+                    - debug
+                  volumeMounts:
+                    - name: model-vol
+                      mountPath: /models
+                  resources:
+                    limits:
+                      nvidia.com/gpu: 1
+              volumes:
+                - name: model-vol
+                  hostPath:
+                    path: /root/models
+                    type: Directory
