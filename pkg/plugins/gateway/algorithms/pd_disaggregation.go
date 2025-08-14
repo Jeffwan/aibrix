@@ -222,10 +222,13 @@ func (r *pdRouter) doPrefillRequest(routingCtx *types.RoutingContext, prefillPod
 		// vLLM requires X-Request-Id in header
 		routingCtx.ReqHeaders["X-Request-Id"] = routingCtx.RequestID
 		responseData, err := r.executeHTTPRequest(apiURL, routingCtx, payload)
-		prettyResp, err := json.MarshalIndent(responseData, "", "  ")
 		if err != nil {
 			klog.Errorf("failed to marshal responseData: %v", err)
 		} else {
+			prettyResp, err := json.MarshalIndent(responseData, "", "  ")
+			if err != nil {
+				klog.Errorf("failed to marshal responseData: %v", err)
+			}
 			klog.Infof("---------------------")
 			// TODO: why it return null?
 			// I0814 14:50:58.119665       1 pd_disaggregation.go:226] prefill response data:
@@ -338,13 +341,12 @@ func (r *pdRouter) executeHTTPRequest(url string, routingCtx *types.RoutingConte
 
 	// Parse response JSON
 	// TODO: any problem here?
+	klog.Infoln("---------------------")
+	klog.Infof("raw prefill response body: %s", string(body))
 	var responseData map[string]any
 	if err := json.Unmarshal(body, &responseData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal prefill response: %w", err)
 	}
-
-	klog.Infoln("---------------------")
-	klog.Infof("raw prefill response body: %s", string(body))
 	klog.Infof("response type: %T, value: %#v", responseData, responseData)
 	return responseData, nil
 }
