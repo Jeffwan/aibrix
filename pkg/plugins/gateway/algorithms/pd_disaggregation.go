@@ -18,8 +18,10 @@ package routingalgorithms
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"math/rand"
 	"net/http"
@@ -219,8 +221,9 @@ func (r *pdRouter) doPrefillRequest(routingCtx *types.RoutingContext, prefillPod
 			klog.InfoS("prefill_request_complete", "request_id", routingCtx.RequestID)
 		}()
 	} else if llmEngine == VLLMEngine {
-		// vLLM requires X-Request-Id in header
-		routingCtx.ReqHeaders["X-Request-Id"] = routingCtx.RequestID
+		// vLLM requires X-Request-Id in header. do not use routingCtx.RequestID here.
+		// Check #https://github.com/vllm-project/aibrix/issues/1407 for more details.
+		routingCtx.ReqHeaders["X-Request-Id"] = uuid.New().String()
 		responseData, err := r.executeHTTPRequest(apiURL, routingCtx, payload)
 		if err != nil {
 			klog.Errorf("failed to marshal responseData: %v", err)
@@ -314,12 +317,23 @@ func (r *pdRouter) executeHTTPRequest(url string, routingCtx *types.RoutingConte
 		req.Header.Set(key, value)
 	}
 	req.Header.Set("content-type", "application/json")
-	req.Header.Set("content-length", strconv.Itoa(len(payload)))
+	//req.Header.Set("content-length", strconv.Itoa(len(payload)))
 
 	klog.Infoln("------------")
 	klog.InfoS("prefill request header", "headers", req.Header)
 	// Execute with timeout
-	client := &http.Client{Timeout: time.Duration(prefillRequestTimeout) * time.Second}
+	req.Header.Set("Connection", "close")
+
+	transport := &http.Transport{
+		TLSNextProto:        map[string]func(string, *tls.Conn) http.RoundTripper{},
+		DisableKeepAlives:   true,
+		MaxIdleConns:        0,
+		MaxIdleConnsPerHost: 0,
+	}
+	client := &http.Client{
+		Timeout:   time.Duration(prefillRequestTimeout) * time.Second,
+		Transport: transport,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http prefill request: %w", err)
