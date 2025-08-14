@@ -105,6 +105,8 @@ func (r pdRouter) Route(ctx *types.RoutingContext, readyPodList types.PodList) (
 	klog.InfoS("P/D", "prefill_pod", prefillPod.Name, "decode_pod", decodePod.Name)
 
 	ctx.SetTargetPod(decodePod)
+	klog.Infoln("----------")
+	klog.InfoS("request headers", "headers", ctx.ReqHeaders)
 	return ctx.TargetAddress(), nil
 }
 
@@ -217,6 +219,8 @@ func (r *pdRouter) doPrefillRequest(routingCtx *types.RoutingContext, prefillPod
 			klog.InfoS("prefill_request_complete", "request_id", routingCtx.RequestID)
 		}()
 	} else if llmEngine == VLLMEngine {
+		// vLLM requires X-Request-Id in header
+		routingCtx.ReqHeaders["X-Request-Id"] = routingCtx.RequestID
 		responseData, err := r.executeHTTPRequest(apiURL, routingCtx, payload)
 		prettyResp, err := json.MarshalIndent(responseData, "", "  ")
 		if err != nil {
@@ -306,7 +310,6 @@ func (r *pdRouter) executeHTTPRequest(url string, routingCtx *types.RoutingConte
 	}
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("content-length", strconv.Itoa(len(payload)))
-	req.Header.Set("X-Request-Id", routingCtx.RequestID)
 
 	// Execute with timeout
 	client := &http.Client{Timeout: time.Duration(prefillRequestTimeout) * time.Second}
