@@ -290,7 +290,6 @@ func (r *pdRouter) preparePrefillPayload(routingCtx *types.RoutingContext, pod *
 
 	// Set prefill-specific parameters
 	completionRequest["max_tokens"] = 1
-	completionRequest["max_completion_tokens"] = 1
 	completionRequest["stream"] = false
 	delete(completionRequest, "stream_options")
 
@@ -311,6 +310,8 @@ func (r *pdRouter) executeHTTPRequest(url string, routingCtx *types.RoutingConte
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("content-length", strconv.Itoa(len(payload)))
 
+	klog.Infoln("------------")
+	klog.InfoS("prefill request header", "headers", req.Header)
 	// Execute with timeout
 	client := &http.Client{Timeout: time.Duration(prefillRequestTimeout) * time.Second}
 	resp, err := client.Do(req)
