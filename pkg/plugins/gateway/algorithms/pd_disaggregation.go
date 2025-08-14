@@ -227,6 +227,9 @@ func (r *pdRouter) doPrefillRequest(routingCtx *types.RoutingContext, prefillPod
 			klog.Errorf("failed to marshal responseData: %v", err)
 		} else {
 			klog.Infof("---------------------")
+			// TODO: why it return null?
+			// I0814 14:50:58.119665       1 pd_disaggregation.go:226] prefill response data:
+			// null
 			klog.Infof("prefill response data:\n%s", prettyResp)
 		}
 
@@ -334,11 +337,15 @@ func (r *pdRouter) executeHTTPRequest(url string, routingCtx *types.RoutingConte
 	}
 
 	// Parse response JSON
+	// TODO: any problem here?
 	var responseData map[string]any
 	if err := json.Unmarshal(body, &responseData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal prefill response: %w", err)
 	}
 
+	klog.Infoln("---------------------")
+	klog.Infof("raw prefill response body: %s", string(body))
+	klog.Infof("response type: %T, value: %#v", responseData, responseData)
 	return responseData, nil
 }
 
