@@ -478,13 +478,15 @@ var _ = XDescribe("ModelAdapter Controller", func() {
 				testCases := []struct {
 					name           string
 					config         config.RuntimeConfig
+					useSidecar     bool
 					podIP          string
 					expectedHost   string
 					expectedLoader string
 				}{
 					{
-						name:           "Default mode",
+						name:           "Default mode (no sidecar)",
 						config:         config.RuntimeConfig{DebugMode: false, EnableRuntimeSidecar: false},
+						useSidecar:     false,
 						podIP:          "10.0.0.1",
 						expectedHost:   "http://10.0.0.1:8000",
 						expectedLoader: "http://10.0.0.1:8000/v1/load_lora_adapter",
@@ -492,13 +494,15 @@ var _ = XDescribe("ModelAdapter Controller", func() {
 					{
 						name:           "Debug mode",
 						config:         config.RuntimeConfig{DebugMode: true, EnableRuntimeSidecar: false},
+						useSidecar:     false,
 						podIP:          "10.0.0.1",
 						expectedHost:   "http://localhost:30081",
 						expectedLoader: "http://localhost:30081/v1/load_lora_adapter",
 					},
 					{
 						name:           "Runtime sidecar mode",
-						config:         config.RuntimeConfig{DebugMode: false, EnableRuntimeSidecar: true},
+						config:         config.RuntimeConfig{DebugMode: false, EnableRuntimeSidecar: false},
+						useSidecar:     true,
 						podIP:          "10.0.0.1",
 						expectedHost:   "http://10.0.0.1:8080",
 						expectedLoader: "http://10.0.0.1:8080/v1/lora_adapter/load",
@@ -507,7 +511,7 @@ var _ = XDescribe("ModelAdapter Controller", func() {
 
 				for _, tc := range testCases {
 					By(fmt.Sprintf("Testing %s", tc.name))
-					urls := BuildURLs(tc.podIP, tc.config)
+					urls := BuildURLs(tc.podIP, tc.config, tc.useSidecar)
 					Expect(urls.BaseURL).To(Equal(tc.expectedHost))
 					Expect(urls.LoadAdapterURL).To(Equal(tc.expectedLoader))
 				}

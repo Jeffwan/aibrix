@@ -868,7 +868,14 @@ func (r *ModelAdapterReconciler) unloadModelAdapter(ctx context.Context, instanc
 			return err
 		}
 
-		urls := BuildURLs(targetPod.Status.PodIP, r.RuntimeConfig)
+		// Auto-detect if pod has runtime sidecar
+		useSidecar := DetectRuntimeSidecar(targetPod)
+		if useSidecar {
+			klog.V(4).InfoS("Using runtime sidecar API for adapter unload", "pod", targetPod.Name, "adapter", instance.Name)
+		} else {
+			klog.V(4).InfoS("Using direct engine API for adapter unload", "pod", targetPod.Name, "adapter", instance.Name)
+		}
+		urls := BuildURLs(targetPod.Status.PodIP, r.RuntimeConfig, useSidecar)
 		req, err := http.NewRequest("POST", urls.UnloadAdapterURL, bytes.NewBuffer(payloadBytes))
 		if err != nil {
 			return err
@@ -919,7 +926,14 @@ func (r *ModelAdapterReconciler) unloadModelAdapterFromPod(ctx context.Context, 
 		return err
 	}
 
-	urls := BuildURLs(targetPod.Status.PodIP, r.RuntimeConfig)
+	// Auto-detect if pod has runtime sidecar
+	useSidecar := DetectRuntimeSidecar(targetPod)
+	if useSidecar {
+		klog.V(4).InfoS("Using runtime sidecar API for adapter unload", "pod", targetPod.Name, "adapter", instance.Name)
+	} else {
+		klog.V(4).InfoS("Using direct engine API for adapter unload", "pod", targetPod.Name, "adapter", instance.Name)
+	}
+	urls := BuildURLs(targetPod.Status.PodIP, r.RuntimeConfig, useSidecar)
 	req, err := http.NewRequest("POST", urls.UnloadAdapterURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return err
@@ -1083,7 +1097,14 @@ func (r *ModelAdapterReconciler) tryLoadModelAdapterOnPod(ctx context.Context, i
 	// Update retry info
 	r.updateRetryInfo(instance, pod.Name, retryCount+1)
 
-	urls := BuildURLs(pod.Status.PodIP, r.RuntimeConfig)
+	// Auto-detect if pod has runtime sidecar
+	useSidecar := DetectRuntimeSidecar(pod)
+	if useSidecar {
+		klog.V(4).InfoS("Using runtime sidecar API for adapter loading", "pod", pod.Name, "adapter", instance.Name)
+	} else {
+		klog.V(4).InfoS("Using direct engine API for adapter loading", "pod", pod.Name, "adapter", instance.Name)
+	}
+	urls := BuildURLs(pod.Status.PodIP, r.RuntimeConfig, useSidecar)
 
 	// Check if adapter already exists
 	exists, err := r.modelAdapterExists(urls.ListModelsURL, instance)
