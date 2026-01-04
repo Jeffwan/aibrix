@@ -1,26 +1,57 @@
-# AIBrix Docker-Compose - Single-Node Deployment
+# AIBrix Docker Compose
 
-Simplified AIBrix deployment for single-node setups without Kubernetes complexity.
+Simplified single-node AIBrix deployment without Kubernetes complexity. Perfect for development, testing, and single-GPU/multi-GPU inference workloads.
 
-## What's Included
+## Features
 
-- **Gateway Router** - Smart routing with P/D disaggregation
-- **KVCache Offloading** - Distributed cache management
-- **P/D Disaggregation** - Separate prefill/decode engines
-- **Metadata Service** - Model and file management
-- **Redis** - State storage
+- **OpenAI-Compatible API** - Drop-in replacement for OpenAI API
+- **Envoy Proxy** - Production-grade L7 proxy with health checks, retries, and circuit breaking
+- **vLLM Backend** - High-performance LLM inference engine
+- **P/D Disaggregation** - Optional separate prefill/decode engines for multi-GPU setups
+- **Metadata Service** - Model registry and file management
+- **Redis** - Shared state storage
 
 ## Quick Start
 
+### 1. Prerequisites
+
+- Docker with Compose v2
+- NVIDIA Container Toolkit (for GPU support)
+- NVIDIA GPU with sufficient VRAM (16GB+ recommended)
+
+### 2. Configure
+
 ```bash
-# 1. Configure
+cd docker-compose
+
+# Copy and edit the configuration
 cp .env.example .env
-vim .env  # Set MODEL_DIR and GPU assignments
 
-# 2. Start
-docker-compose up -d
+# Edit with your settings
+# Required: MODEL_NAME, HF_TOKEN (for gated models like Llama)
+vim .env
+```
 
-# 3. Test
+### 3. Start
+
+```bash
+# Simple mode (single vLLM engine)
+./start.sh
+
+# Or with P/D disaggregation (requires 2+ GPUs)
+./start.sh --pd
+```
+
+### 4. Test
+
+```bash
+# Check health
+curl http://localhost/health
+
+# List models
+curl http://localhost/v1/models
+
+# Chat completion
 curl http://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
@@ -31,90 +62,250 @@ curl http://localhost/v1/chat/completions \
 
 ## Architecture
 
+### Simple Mode (Default)
+
 ```
-Client → Envoy (80) → Gateway (50052) → Prefill (8000) / Decode (8001)
-                            ↓
-                       Redis + Metadata (8090)
+                    ┌─────────────┐
+                    │   Client    │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │ Envoy (:80) │  L7 Proxy
+                    └──────┬──────┘
+                           │
+           ┌───────────────┼───────────────┐
+           │               │               │
+           ▼               ▼               ▼
+    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+    │    vLLM     │ │  Metadata   │ │    Redis    │
+    │   (:8000)   │ │   (:8090)   │ │   (:6379)   │
+    └─────────────┘ └─────────────┘ └─────────────┘
+        Inference    Model Registry  State Storage
 ```
 
-## Configuration (.env)
+### P/D Disaggregation Mode
 
-```bash
-# Required: Point to your model files
-MODEL_DIR=/path/to/models
-MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
-
-# GPU assignment (2 GPUs recommended)
-PREFILL_GPU=0  # Compute-heavy
-DECODE_GPU=1   # Memory-heavy
-
-# Transfer backend: tcp, nixl, mooncake
-TRANSFER_BACKEND=tcp
-
-# Optional: KVCache offloading
-ENABLE_KVCACHE=false
 ```
+                    ┌─────────────┐
+                    │   Client    │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │ Envoy (:80) │
+                    └──────┬──────┘
+                           │
+           ┌───────────────┼───────────────┐
+           │               │               │
+           ▼               ▼               ▼
+    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+    │   Prefill   │ │   Decode    │ │  Metadata   │
+    │   (:8001)   │ │   (:8002)   │ │   (:8090)   │
+    └─────────────┘ └─────────────┘ └─────────────┘
+       GPU 0 (KV)     GPU 1 (Gen)    Model Registry
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODEL_NAME` | `meta-llama/Llama-3.1-8B-Instruct` | HuggingFace model ID |
+| `MODEL_DIR` | `~/.cache/huggingface` | Model cache directory |
+| `HF_TOKEN` | - | HuggingFace token (required for gated models) |
+| `VLLM_GPU` | `0` | GPU ID for simple mode |
+| `PREFILL_GPU` | `0` | GPU ID for prefill engine (P/D mode) |
+| `DECODE_GPU` | `1` | GPU ID for decode engine (P/D mode) |
+| `MAX_MODEL_LEN` | `8192` | Maximum context length |
+| `GPU_MEMORY_UTILIZATION` | `0.9` | GPU memory fraction to use |
+| `HTTP_PORT` | `80` | HTTP entry point port |
+| `VLLM_PORT` | `8000` | Direct vLLM access port |
+
+See `.env.example` for all available options.
 
 ## Services
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| proxy | 80 | HTTP entry point |
-| gateway | 50052 | gRPC routing |
-| prefill-engine | 8000 | Initial token generation |
-| decode-engine | 8001 | Token generation |
-| metadata-service | 8090 | Model/file API |
-| redis | 6379 | State storage |
+| Service | Port | Description |
+|---------|------|-------------|
+| `envoy` | 80, 9901 | HTTP proxy (80) and admin interface (9901) |
+| `vllm` | 8000 | vLLM inference engine (simple mode) |
+| `prefill-engine` | 8001 | Prefill engine (P/D mode) |
+| `decode-engine` | 8002 | Decode engine (P/D mode) |
+| `metadata-service` | 8090 | Model registry and file management |
+| `redis` | 6379 | State storage |
 
-## Common Tasks
+## Endpoints
 
-**View logs:**
+### Inference API (OpenAI-Compatible)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/chat/completions` | POST | Chat completion (streaming supported) |
+| `/v1/completions` | POST | Text completion |
+| `/v1/embeddings` | POST | Text embeddings |
+| `/v1/models` | GET | List available models |
+
+### Health & Monitoring
+
+| Endpoint | Description |
+|----------|-------------|
+| `/health` | vLLM health check |
+| `/healthz` | Envoy health check |
+| `/v1/models` | Model availability |
+| `:9901/` | Envoy admin dashboard |
+| `:9901/stats` | Envoy statistics |
+| `:9901/clusters` | Upstream cluster health |
+
+## Commands
+
+### Start/Stop
+
 ```bash
-docker-compose logs -f gateway prefill-engine decode-engine
+# Start (simple mode)
+docker compose up -d
+
+# Start (P/D mode)
+docker compose --profile pd up -d
+
+# Stop
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
 ```
 
-**Check health:**
+### Logs
+
 ```bash
-docker-compose ps
-curl http://localhost/health
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f vllm
+
+# Last 100 lines
+docker compose logs --tail=100 vllm
 ```
 
-**Scale decode engines:**
+### Status
+
 ```bash
-docker-compose up -d --scale decode-engine=3
+# Service status
+docker compose ps
+
+# Resource usage
+docker stats
 ```
 
-**Stop:**
+### Scaling
+
 ```bash
-docker-compose down
+# Note: Scaling requires additional configuration
+# Each replica needs its own GPU
+docker compose up -d --scale vllm=2
 ```
 
 ## Troubleshooting
 
-**GPU not found:**
+### GPU Not Found
+
 ```bash
+# Check NVIDIA driver
 nvidia-smi
-docker-compose exec prefill-engine nvidia-smi
+
+# Check Docker GPU access
+docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
+
+# Install NVIDIA Container Toolkit
+# https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
 ```
 
-**Model not loading:**
+### Model Not Loading
+
 ```bash
-docker-compose exec prefill-engine ls -la /models
+# Check vLLM logs
+docker compose logs vllm
+
+# Verify model path
+docker compose exec vllm ls -la /root/.cache/huggingface
+
+# Check GPU memory
+nvidia-smi
+
+# Try smaller context length
+# Edit .env: MAX_MODEL_LEN=4096
 ```
 
-**Connection errors:**
+### Connection Errors
+
 ```bash
-docker-compose logs gateway
-docker-compose exec gateway ping prefill-engine
+# Check Envoy health
+curl http://localhost:9901/ready
+
+# Check upstream clusters
+curl http://localhost:9901/clusters
+
+# View Envoy logs
+docker compose logs envoy
+
+# Test direct vLLM access
+curl http://localhost:8000/health
 ```
 
-## vs Kubernetes
+### Out of Memory
 
-| Feature | Docker-Compose | Kubernetes |
+```bash
+# Reduce GPU memory utilization
+# Edit .env: GPU_MEMORY_UTILIZATION=0.8
+
+# Reduce context length
+# Edit .env: MAX_MODEL_LEN=4096
+
+# Use a smaller model
+# Edit .env: MODEL_NAME=meta-llama/Llama-3.2-3B-Instruct
+```
+
+## Comparison: Docker Compose vs Kubernetes
+
+| Feature | Docker Compose | Kubernetes |
 |---------|----------------|------------|
-| Setup | Simple | Complex |
+| Setup Complexity | Simple | Complex |
 | Multi-node | No | Yes |
 | Auto-scaling | No | Yes |
-| Best for | Dev/test, single-node | Production |
+| Service Discovery | Static | Dynamic |
+| Load Balancing | Envoy | Gateway API |
+| Best For | Development, Single-node | Production, Multi-node |
 
-For production multi-node deployments, use the Helm chart: `helm install aibrix /path/to/aibrix/dist/chart`
+For production multi-node deployments, use the Helm chart:
+```bash
+helm install aibrix ./dist/chart
+```
+
+## File Structure
+
+```
+docker-compose/
+├── docker-compose.yml     # Service definitions
+├── .env.example           # Configuration template
+├── start.sh               # Startup script
+├── configs/
+│   ├── envoy.yaml         # Envoy proxy configuration
+│   └── backends.json      # Backend registry
+└── README.md              # This file
+```
+
+## Upgrading
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Restart with new images
+docker compose up -d
+```
+
+## License
+
+Apache 2.0 - See [LICENSE](../LICENSE) for details.

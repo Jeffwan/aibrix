@@ -1,0 +1,16 @@
+{
+  "backends": [
+    {
+      "name": "vllm",
+      "host": "vllm",
+      "port": 8000,
+      "models": ["${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}"],
+      "weight": 100,
+      "enabled": true
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "description": "AIBrix Docker Compose backend registry"
+  }
+}
