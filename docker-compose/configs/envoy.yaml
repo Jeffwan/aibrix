@@ -1,0 +1,107 @@
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+static_resources:
+  listeners:
+    - name: http_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 80
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                codec_type: AUTO
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: backend
+                      domains: ["*"]
+                      routes:
+                        # OpenAI-compatible API routes
+                        - match:
+                            prefix: "/v1/chat/completions"
+                          route:
+                            cluster: gateway_grpc
+                            timeout: 300s
+                        - match:
+                            prefix: "/v1/completions"
+                          route:
+                            cluster: gateway_grpc
+                            timeout: 300s
+                        - match:
+                            prefix: "/v1/models"
+                          route:
+                            cluster: metadata_service
+                        - match:
+                            prefix: "/v1/files"
+                          route:
+                            cluster: metadata_service
+                        - match:
+                            prefix: "/v1/batches"
+                          route:
+                            cluster: metadata_service
+                        # Metrics and health
+                        - match:
+                            prefix: "/metrics"
+                          route:
+                            cluster: gateway_grpc
+                        - match:
+                            prefix: "/health"
+                          route:
+                            cluster: gateway_grpc
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: gateway_grpc
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: gateway_grpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: gateway
+                      port_value: 50052
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          grpc_health_check: {}
+
+    - name: metadata_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: metadata_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: metadata-service
+                      port_value: 8090
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /healthz

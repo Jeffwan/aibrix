@@ -1,0 +1,128 @@
+version: '3.8'
+
+# Alternative docker-compose with vLLM engines instead of SGLang
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: aibrix-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - aibrix-network
+
+  metadata-service:
+    image: aibrix/metadata-service:nightly
+    container_name: aibrix-metadata
+    ports:
+      - "8090:8090"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: ["aibrix_metadata", "--host", "0.0.0.0", "--port", "8090"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - aibrix-network
+
+  gateway:
+    image: aibrix/gateway-plugins:nightly
+    container_name: aibrix-gateway
+    ports:
+      - "50052:50052"
+      - "8080:8080"
+      - "6060:6060"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - AIBRIX_POD_METRIC_REFRESH_INTERVAL_MS=50
+      - AIBRIX_PREFIX_CACHE_TOKENIZER_TYPE=tiktoken
+      - AIBRIX_PREFIX_CACHE_BLOCK_SIZE=128
+      - AIBRIX_PREFILL_REQUEST_TIMEOUT=60s
+      - AIBRIX_PREFILL_ENDPOINT=vllm-engine:8000
+      - AIBRIX_ROUTING_ALGORITHM=least_loaded
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:50052"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - aibrix-network
+
+  # Single vLLM engine (simpler setup without P/D disaggregation)
+  vllm-engine:
+    image: aibrix/vllm:v0.6.9
+    container_name: aibrix-vllm
+    ports:
+      - "8000:8000"
+    environment:
+      - CUDA_VISIBLE_DEVICES=${VLLM_GPU:-0}
+    volumes:
+      - ${MODEL_DIR:-./models}:/models
+      - /dev/shm:/dev/shm
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${VLLM_GPU:-0}']
+              capabilities: [gpu]
+    command: >
+      python -m vllm.entrypoints.openai.api_server
+      --model ${MODEL_PATH:-/models}
+      --host 0.0.0.0
+      --port 8000
+      --tensor-parallel-size ${VLLM_TP:-1}
+      --enable-prefix-caching
+      --gpu-memory-utilization 0.9
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - aibrix-network
+
+  proxy:
+    image: envoyproxy/envoy:v1.33.2
+    container_name: aibrix-proxy
+    ports:
+      - "80:80"
+      - "9901:9901"
+    volumes:
+      - ./configs/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["-c", "/etc/envoy/envoy.yaml"]
+    depends_on:
+      - gateway
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - aibrix-network
+
+networks:
+  aibrix-network:
+    driver: bridge
+
+volumes:
+  redis-data:
