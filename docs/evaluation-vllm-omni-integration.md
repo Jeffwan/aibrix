@@ -39,16 +39,184 @@ vLLM-Omni is the official vLLM project extension for omni-modality models. Key c
 
 **Authors:** Jeff J. Ma, Jae-Won Chung, et al. (University of Michigan, Samsung)
 
+**Repository:** [github.com/cornserve-ai/cornserve](https://github.com/cornserve-ai/cornserve)
+
 Cornserve is a distributed serving system for any-to-any multimodal models with:
 - **3.81× throughput improvement** over baselines
 - **5.79× tail latency reduction**
 - **Automatic model fission** determining optimal disaggregation strategies
+- **~15,000 lines of Python** (~8,700 control plane, ~6,500 executor code)
 
 **Key Innovations:**
 1. **Model Fission Planning** - Automatic disaggregation strategy selection
 2. **Executor Graph Abstraction** - DAG-based computation representation
 3. **Cell-Based Resource Allocation** - Power-of-two GPU allocation units
-4. **Request-Static Routing** - Probabilistic path assignment
+4. **Request-Static Routing** - Probabilistic path assignment (3.7× higher throughput vs dynamic)
+
+---
+
+## 1.3 Cornserve Architecture Deep Dive (from codebase analysis)
+
+After analyzing the [Cornserve source code](https://github.com/cornserve-ai/cornserve), here are the key architectural components:
+
+### 1.3.1 System Components
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      CORNSERVE CONTROL PLANE                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Gateway (FastAPI)          │  Task Dispatcher (gRPC+HTTP)              │
+│  ├─ /app/register           │  ├─ notify_task_deployment()              │
+│  ├─ /app/invoke/{app_id}    │  ├─ notify_task_teardown()                │
+│  ├─ /tasks/invoke           │  └─ invoke() - dispatches to executors    │
+│  └─ /task/scale             │                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Resource Manager (gRPC)    │  Task Manager (gRPC per executor)         │
+│  ├─ deploy_unit_task()      │  ├─ RegisterTask()                        │
+│  ├─ teardown_unit_task()    │  ├─ UpdateResources() - scale GPUs        │
+│  ├─ scale_up/down_unit_task │  ├─ GetRoute() - executor selection       │
+│  └─ Spawns K8s Pods/Services│  └─ Healthcheck()                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Task Executors (GPU Pods)                                              │
+│  ├─ VLLMDescriptor (LLM)         - vLLM 0.9.2 integration               │
+│  ├─ PrefillVLLMDescriptor        - Prefill stage with NixlConnector     │
+│  ├─ DecodeVLLMDescriptor         - Decode stage with NixlConnector      │
+│  ├─ EricDescriptor (Encoder)     - Multimodal encoders                  │
+│  └─ GeriDescriptor (Generator)   - Image/audio generators               │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Sidecar (per-GPU)              │  Task Registry (CRD-based)            │
+│  ├─ DataForward routing         │  ├─ TaskDefinition CR                 │
+│  ├─ Shared memory (/dev/shm)    │  ├─ UnitTaskInstance CR               │
+│  └─ RDMA via UCX                │  └─ ExecutionDescriptor CR            │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.3.2 gRPC Service Definitions
+
+**From `proto/v1/` directory:**
+
+```protobuf
+// resource_manager.proto
+service ResourceManager {
+  rpc DeployUnitTask(DeployUnitTaskRequest) returns (DeployUnitTaskResponse);
+  rpc TeardownUnitTask(TeardownUnitTaskRequest) returns (TeardownUnitTaskResponse);
+  rpc ScaleUnitTask(ScaleUnitTaskRequest) returns (ScaleUnitTaskResponse);
+  rpc Healthcheck(HealthcheckRequest) returns (HealthcheckResponse);
+}
+
+// task_manager.proto
+service TaskManager {
+  rpc RegisterTask(RegisterTaskRequest) returns (RegisterTaskResponse);
+  rpc UpdateResources(UpdateResourcesRequest) returns (UpdateResourcesResponse);
+  rpc GetRoute(GetRouteRequest) returns (GetRouteResponse);  // Returns executor URL
+  rpc Healthcheck(HealthcheckRequest) returns (HealthcheckResponse);
+}
+
+// task_dispatcher.proto
+service TaskDispatcher {
+  rpc NotifyUnitTaskDeployment(NotifyUnitTaskDeploymentRequest) returns (NotifyUnitTaskDeploymentResponse);
+  rpc NotifyUnitTaskTeardown(NotifyUnitTaskTeardownRequest) returns (NotifyUnitTaskTeardownResponse);
+}
+```
+
+### 1.3.3 vLLM Integration Details
+
+Cornserve integrates vLLM 0.9.2 through **TaskExecutionDescriptors**:
+
+```python
+# VLLMDescriptor - Standard LLM execution
+class VLLMDescriptor(TaskExecutionDescriptor):
+    def get_container_args(self, gpus, port):
+        return [
+            self.task.model_id,
+            "--tensor-parallel-size", str(len(gpus)),
+            "--port", str(port),
+            "--trust-remote-code",
+            "--cornserve-sidecar-ranks", *[str(gpu.global_rank) for gpu in gpus],
+            "--enforce-eager",  # Required for hidden states transfer
+            "--gpu-memory-utilization", "0.93",
+        ]
+
+# PrefillVLLMDescriptor - Prefill stage for P/D disaggregation
+class PrefillVLLMDescriptor(TaskExecutionDescriptor):
+    def get_container_args(self, gpus, port):
+        return [
+            # ... same as above, plus:
+            "--kv-transfer-config",
+            '{"kv_connector":"NixlConnector","kv_role":"kv_producer"}',
+        ]
+
+# DecodeVLLMDescriptor - Decode stage
+class DecodeVLLMDescriptor(TaskExecutionDescriptor):
+    def get_container_args(self, gpus, port):
+        return [
+            # ... same as above, plus:
+            "--kv-transfer-config",
+            '{"kv_connector":"NixlConnector","kv_role":"kv_consumer"}',
+        ]
+```
+
+**Key vLLM customizations in Cornserve:**
+- `--cornserve-sidecar-ranks`: Routes embedding data through sidecar
+- `CORNSERVE_VLLM_DISABLE_MULTIMODAL`: When encoders are disaggregated
+- Custom `vllm_xargs` for hidden states and KV transfer param forwarding
+
+### 1.3.4 Kubernetes Custom Resources
+
+Cornserve uses CRDs for task lifecycle management:
+
+```python
+# From constants.py
+CRD_GROUP = "cornserve.ai"
+CRD_VERSION = "v1"
+
+# Custom Resources
+CRD_KIND_TASK_DEFINITION = "TaskDefinition"       # Defines task types
+CRD_KIND_UNIT_TASK_INSTANCE = "UnitTaskInstance"  # Running task instances
+CRD_KIND_EXECUTION_DESCRIPTOR = "ExecutionDescriptor"  # How to run tasks
+```
+
+### 1.3.5 Data Transfer Architecture
+
+**Intra-node (≤8 GPUs):**
+```python
+# Uses Linux shared memory /dev/shm
+# Direct GPU → shared memory writes
+# gRPC notifications between executors
+```
+
+**Inter-node (>8 GPUs):**
+```python
+# RDMA via UCX communication library
+# NixlConnector for KV cache transfer
+# Infiniband device mounting in containers
+```
+
+### 1.3.6 Composite Task Example (Qwen3-Omni)
+
+```python
+# examples/qwen3_omni.py
+class OmniTask(Task[OmniInput, Stream[OpenAIChatCompletionChunk]]):
+    """Combines thinker (LLM) and talker (audio generator)"""
+
+    def post_init(self):
+        self.thinker_text = MLLMTask(model_id=self.model_id, ...)
+        self.thinker_embedding = MLLMEmbeddingTask(model_id=self.model_id, ...)
+        self.talker_vocoder = OmniTalkerVocoderTask(model_id=self.model_id)
+
+    def invoke(self, task_input: OmniInput):
+        if not task_input.return_audio:
+            return self.thinker_text.invoke(thinker_input)
+
+        # Get embeddings from thinker
+        thinker_output = self.thinker_embedding.invoke(thinker_input)
+
+        # Pass to talker for audio generation
+        return self.talker_vocoder.invoke(OmniTalkerVocoderInput(
+            thinker_hidden_states=thinker_output.embeddings,
+            ...
+        ))
+```
 
 ---
 
@@ -429,23 +597,119 @@ spec:
 
 ---
 
-## 9. Conclusion
+## 9. Why AIBrix Has Strong Advantage to Build This Layer
 
-Integrating vLLM-Omni and Cornserve concepts into AIBrix is strategically valuable as any-to-any multimodal models become mainstream. AIBrix's existing architecture provides a strong foundation:
+After deep analysis of Cornserve's codebase, there are striking similarities with AIBrix's existing architecture that make integration highly feasible:
 
-1. **StormService** already supports role-based disaggregation
-2. **Gateway** has extensible routing framework
-3. **NixlConnector** provides high-performance data transfer
+### 9.1 Concept Mapping: Cornserve → AIBrix
+
+| Cornserve Concept | AIBrix Equivalent | Status |
+|-------------------|-------------------|--------|
+| **ResourceManager** | StormService Controller | ✅ Exists |
+| **TaskManager** (per-executor gRPC) | RoleSet Pod management | ✅ Exists |
+| **TaskDispatcher** | Gateway Plugin | ✅ Exists |
+| **Task Executor Descriptors** | Container configurations in RoleSet | ✅ Exists |
+| **NixlConnector (P/D)** | NixlConnector in samples/disaggregation | ✅ Exists |
+| **Sidecar (data routing)** | Could extend AI Runtime | 🔶 Partial |
+| **TaskDefinition CRD** | Could add new CRD | ⬜ To build |
+| **Cell-based Planner** | Could add to PodAutoscaler | ⬜ To build |
+
+### 9.2 Overlapping Infrastructure
+
+**Both Cornserve and AIBrix already share:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    SHARED INFRASTRUCTURE                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  ✅ vLLM as LLM executor (same --kv-transfer-config flags)          │
+│  ✅ NixlConnector for KV cache transfer (kv_producer/kv_consumer)   │
+│  ✅ Kubernetes-native deployment (Pods, Services, CRDs)             │
+│  ✅ Role-based disaggregation (Prefill/Decode → Encoder/LLM/Gen)    │
+│  ✅ gRPC for control plane communication                            │
+│  ✅ Gateway/router for request routing                              │
+│  ✅ OpenTelemetry tracing support                                   │
+│  ✅ Tensor parallelism per component                                │
+│  ✅ GPU resource management per role                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.3 Code Comparison: vLLM Args
+
+**Cornserve PrefillVLLMDescriptor:**
+```python
+args = [
+    self.task.model_id,
+    "--tensor-parallel-size", str(len(gpus)),
+    "--kv-transfer-config", '{"kv_connector":"NixlConnector","kv_role":"kv_producer"}',
+    "--cornserve-sidecar-ranks", *[str(gpu.global_rank) for gpu in gpus],
+]
+```
+
+**AIBrix samples/disaggregation/vllm/1p1d.yaml:**
+```yaml
+args:
+  - --kv-transfer-config
+  - '{"kv_connector":"NixlConnector","kv_role":"kv_producer",...}'
+  - --tensor-parallel-size
+  - "1"
+```
+
+**The vLLM configurations are nearly identical!**
+
+### 9.4 What AIBrix Can Adopt from Cornserve
+
+| Feature | Cornserve Implementation | Effort for AIBrix |
+|---------|--------------------------|-------------------|
+| **Eric (Encoder) executor** | Python service, ~2K LoC | Medium - add as new engine type |
+| **Geri (Generator) executor** | Python service, ~2K LoC | Medium - add as new engine type |
+| **DataForward abstraction** | Pydantic models + sidecar | Medium - extend AI Runtime |
+| **Composite Task graph** | Python task composition | Low - could use YAML/CRD |
+| **GPU scaling API** | UpdateResources gRPC | Low - extend PodAutoscaler |
+| **App registration** | Gateway endpoints | Low - gateway plugin extension |
+
+### 9.5 Recommended Path: Hybrid Approach
+
+Given the high overlap, AIBrix should:
+
+1. **Adopt Cornserve's executor pattern** - Port Eric/Geri as new engine types alongside vLLM
+2. **Extend StormService** - Add encoder/generator roles beyond prefill/decode
+3. **Enhance Gateway Plugin** - Add task dispatch logic from Cornserve's TaskDispatcher
+4. **Keep Kubernetes-native** - Use CRDs instead of Cornserve's Python-based task registry
+
+### 9.6 Strategic Value
+
+Building omni-modal support on AIBrix's existing foundation provides:
+
+| Advantage | Explanation |
+|-----------|-------------|
+| **Lower engineering cost** | 60-70% of infrastructure already exists |
+| **Familiar patterns** | Same StormService/RoleSet model for users |
+| **Enterprise integration** | Fits with existing RBAC, multi-tenancy, observability |
+| **vLLM continuity** | Already using same vLLM flags and NixlConnector |
+| **Kubernetes-first** | CRD-based vs Python-based task management |
+
+---
+
+## 10. Conclusion
+
+Integrating vLLM-Omni and Cornserve concepts into AIBrix is strategically valuable as any-to-any multimodal models become mainstream. **AIBrix's existing architecture provides a very strong foundation** - after codebase analysis, we found that 60-70% of the infrastructure already exists:
+
+1. **StormService** already supports role-based disaggregation (same as Cornserve's TaskManager)
+2. **Gateway** has extensible routing framework (same as Cornserve's TaskDispatcher)
+3. **NixlConnector** provides high-performance data transfer (same vLLM integration)
+4. **Kubernetes-native CRDs** align with Cornserve's task registry pattern
 
 The recommended phased approach balances:
 - **Quick wins** (Phase 1-2): Enable basic omni-modal serving in 6 weeks
 - **Strategic value** (Phase 3-4): Full Cornserve-level optimization in 16 weeks
 
 **Next Steps:**
-1. Validate vLLM-Omni v0.11.0 compatibility with AIBrix container build
-2. Create proof-of-concept Qwen-Omni deployment
-3. Benchmark disaggregated vs monolithic performance
-4. Finalize Phase 1 implementation plan
+1. Port Cornserve's Eric (encoder) and Geri (generator) as new AIBrix engine types
+2. Extend StormService to support encoder/llm/generator roles
+3. Add DataForward-style embedding routing to AI Runtime
+4. Benchmark disaggregated vs monolithic performance on Qwen-Omni
+5. Evaluate contributing back to upstream vLLM-Omni
 
 ---
 
