@@ -1,0 +1,10 @@
+# AIBrix Gateway Endpoints Configuration
+# This file defines the backend endpoints for the gateway plugin.
+#
+# Simple mode: Single vLLM engine
+# For P/D mode, use endpoints-pd.yaml instead.
+
+models:
+  - name: "${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}"
+    endpoints:
+      - address: "vllm:8000"
