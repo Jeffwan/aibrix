@@ -212,36 +212,43 @@ services:
     restart: unless-stopped
 
   # ============================================================================
-  # Gateway Plugin (Optional - for advanced routing)
-  # Uncomment to enable intelligent routing with ext_proc
+  # Gateway Plugin - Intelligent Routing (Optional)
+  # Use with: docker compose --profile gateway up -d
   # ============================================================================
 
-  # gateway:
-  #   image: aibrix/gateway-plugins:${AIBRIX_VERSION:-nightly}
-  #   container_name: aibrix-gateway
-  #   profiles: ["gateway"]
-  #   ports:
-  #     - "${GATEWAY_GRPC_PORT:-50052}:50052"
-  #     - "${GATEWAY_METRICS_PORT:-8080}:8080"
-  #   environment:
-  #     REDIS_HOST: redis
-  #     REDIS_PORT: "6379"
-  #     AIBRIX_ROUTING_ALGORITHM: ${ROUTING_ALGORITHM:-least_request}
-  #     AIBRIX_POD_METRIC_REFRESH_INTERVAL_MS: "100"
-  #     AIBRIX_PREFIX_CACHE_TOKENIZER_TYPE: tiktoken
-  #     AIBRIX_PREFIX_CACHE_BLOCK_SIZE: "128"
-  #     # Static backend configuration for Docker mode
-  #     AIBRIX_STATIC_BACKENDS: "vllm:8000"
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD", "grpc_health_probe", "-addr=:50052"]
-  #     <<: *healthcheck-defaults
-  #     start_period: 15s
-  #   networks:
-  #     - aibrix-network
-  #   restart: unless-stopped
+  gateway:
+    image: aibrix/gateway-plugins:${AIBRIX_VERSION:-nightly}
+    container_name: aibrix-gateway
+    profiles: ["gateway"]
+    ports:
+      - "${GATEWAY_GRPC_PORT:-50052}:50052"
+      - "${GATEWAY_METRICS_PORT:-8080}:8080"
+    environment:
+      # Docker mode - disables Kubernetes features
+      AIBRIX_DOCKER_MODE: "true"
+      # Redis connection
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # Static backend configuration
+      AIBRIX_STATIC_BACKENDS: "vllm=vllm:8000:${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}"
+      AIBRIX_DEFAULT_MODEL: ${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
+      # Routing algorithm: random, least_request, least_load, prefix_cache_aware
+      AIBRIX_ROUTING_ALGORITHM: ${ROUTING_ALGORITHM:-least_request}
+      # Prefix cache settings
+      AIBRIX_PREFIX_CACHE_TOKENIZER_TYPE: tiktoken
+      AIBRIX_PREFIX_CACHE_BLOCK_SIZE: "128"
+    depends_on:
+      redis:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:50052"]
+      <<: *healthcheck-defaults
+      start_period: 15s
+    networks:
+      - aibrix-network
+    restart: unless-stopped
 
 networks:
   aibrix-network:

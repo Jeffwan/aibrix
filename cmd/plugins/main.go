@@ -62,48 +62,78 @@ func main() {
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
-	var config *rest.Config
+
+	var gatewayServer *gateway.Server
+	var lis net.Listener
 	var err error
 
-	// ref: https://github.com/kubernetes-sigs/controller-runtime/issues/878#issuecomment-1002204308
-	kubeConfig := flag.Lookup("kubeconfig").Value.String()
-	if kubeConfig == "" {
-		klog.Info("using in-cluster configuration")
-		config, err = rest.InClusterConfig()
+	// Check if running in Docker mode (no Kubernetes)
+	dockerMode := cache.IsDockerMode()
+
+	if dockerMode {
+		klog.Info("Running in Docker mode - Kubernetes features disabled")
+
+		// Initialize cache for Docker mode with static backends
+		cache.InitForDocker(stopCh, cache.DockerModeOptions{
+			RedisClient:         redisClient,
+			ModelRouterProvider: routing.ModelRouterFactory,
+			StaticBackends:      utils.LoadEnv("AIBRIX_STATIC_BACKENDS", ""),
+			BackendConfigFile:   utils.LoadEnv("AIBRIX_BACKEND_CONFIG", ""),
+			DefaultModel:        utils.LoadEnv("AIBRIX_DEFAULT_MODEL", ""),
+		})
+
+		lis, err = net.Listen("tcp", grpcAddr)
+		if err != nil {
+			klog.Fatalf("failed to listen: %v", err)
+		}
+
+		// Create gateway server without Kubernetes clients (they will be nil)
+		gatewayServer = gateway.NewServer(redisClient, nil, nil)
 	} else {
-		klog.Infof("using configuration from '%s'", kubeConfig)
-		config, err = clientcmd.BuildConfigFromFlags("", kubeConfig)
+		// Standard Kubernetes mode
+		var config *rest.Config
+
+		// ref: https://github.com/kubernetes-sigs/controller-runtime/issues/878#issuecomment-1002204308
+		kubeConfig := flag.Lookup("kubeconfig").Value.String()
+		if kubeConfig == "" {
+			klog.Info("using in-cluster configuration")
+			config, err = rest.InClusterConfig()
+		} else {
+			klog.Infof("using configuration from '%s'", kubeConfig)
+			config, err = clientcmd.BuildConfigFromFlags("", kubeConfig)
+		}
+
+		if err != nil {
+			klog.Fatalf("Error getting Kubernetes config: %v", err)
+		}
+
+		// Initialize cache with KV sync enabled for gateway
+		kvSyncEnabled := utils.LoadEnvBool(constants.EnvPrefixCacheKVEventSyncEnabled, false)
+		remoteTokenizerEnabled := utils.LoadEnvBool(constants.EnvPrefixCacheUseRemoteTokenizer, false)
+
+		cache.InitWithOptions(config, stopCh, cache.InitOptions{
+			EnableKVSync:        kvSyncEnabled && remoteTokenizerEnabled,
+			RedisClient:         redisClient,
+			ModelRouterProvider: routing.ModelRouterFactory,
+		})
+
+		k8sClient, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			klog.Fatalf("Error creating kubernetes client: %v", err)
+		}
+
+		lis, err = net.Listen("tcp", grpcAddr)
+		if err != nil {
+			klog.Fatalf("failed to listen: %v", err)
+		}
+
+		gatewayK8sClient, err := versioned.NewForConfig(config)
+		if err != nil {
+			klog.Fatalf("Error on creating gateway k8s client: %v", err)
+		}
+
+		gatewayServer = gateway.NewServer(redisClient, k8sClient, gatewayK8sClient)
 	}
-
-	if err != nil {
-		panic(err)
-	}
-
-	// Initialize cache with KV sync enabled for gateway
-	kvSyncEnabled := utils.LoadEnvBool(constants.EnvPrefixCacheKVEventSyncEnabled, false)
-	remoteTokenizerEnabled := utils.LoadEnvBool(constants.EnvPrefixCacheUseRemoteTokenizer, false)
-
-	cache.InitWithOptions(config, stopCh, cache.InitOptions{
-		EnableKVSync:        kvSyncEnabled && remoteTokenizerEnabled,
-		RedisClient:         redisClient,
-		ModelRouterProvider: routing.ModelRouterFactory,
-	})
-
-	k8sClient, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		klog.Fatalf("Error creating kubernetes client: %v", err)
-	}
-
-	lis, err := net.Listen("tcp", grpcAddr)
-	if err != nil {
-		klog.Fatalf("failed to listen: %v", err)
-	}
-	gatewayK8sClient, err := versioned.NewForConfig(config)
-	if err != nil {
-		klog.Fatalf("Error on creating gateway k8s client: %v", err)
-	}
-
-	gatewayServer := gateway.NewServer(redisClient, k8sClient, gatewayK8sClient)
 
 	if err := gatewayServer.StartMetricsServer(metricsAddr); err != nil {
 		klog.Fatalf("Failed to start metrics server: %v", err)

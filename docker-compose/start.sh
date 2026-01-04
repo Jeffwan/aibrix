@@ -4,6 +4,7 @@
 # ==============================================================================
 # Usage:
 #   ./start.sh              # Start in simple mode (single vLLM engine)
+#   ./start.sh --gateway    # Start with gateway-plugin (intelligent routing)
 #   ./start.sh --pd         # Start in P/D disaggregation mode
 #   ./start.sh --no-pull    # Start without pulling latest images
 #   ./start.sh --help       # Show help
@@ -22,6 +23,7 @@ NC='\033[0m' # No Color
 
 # Default options
 PD_MODE=false
+GATEWAY_MODE=false
 PULL_IMAGES=true
 SKIP_CONFIRM=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,6 +33,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --pd|--disaggregate)
             PD_MODE=true
+            shift
+            ;;
+        --gateway|-g)
+            GATEWAY_MODE=true
             shift
             ;;
         --no-pull)
@@ -47,15 +53,22 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
+            echo "  --gateway, -g          Start with gateway-plugin (intelligent routing)"
             echo "  --pd, --disaggregate   Start in P/D disaggregation mode (2 GPUs)"
             echo "  --no-pull              Skip pulling latest Docker images"
             echo "  -y, --yes              Skip confirmation prompts"
             echo "  -h, --help             Show this help message"
             echo ""
+            echo "Modes:"
+            echo "  Simple (default)       Single vLLM engine, direct Envoy routing"
+            echo "  Gateway                Gateway-plugin for intelligent routing, rate limiting"
+            echo "  P/D                    Separate prefill/decode engines (requires 2 GPUs)"
+            echo ""
             echo "Examples:"
             echo "  $0                     # Simple mode with single vLLM engine"
+            echo "  $0 --gateway           # With gateway-plugin for advanced routing"
             echo "  $0 --pd                # P/D mode with prefill + decode engines"
-            echo "  $0 --pd --no-pull -y   # P/D mode, no pull, no confirmation"
+            echo "  $0 --gateway --pd      # Gateway + P/D mode"
             exit 0
             ;;
         *)
@@ -78,11 +91,15 @@ echo -e "${BOLD}${BLUE}║                    AIBrix Docker Compose             
 echo -e "${BOLD}${BLUE}╚══════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-if [ "$PD_MODE" = true ]; then
-    echo -e "${CYAN}Mode:${NC} P/D Disaggregation (Prefill + Decode engines)"
-else
-    echo -e "${CYAN}Mode:${NC} Simple (Single vLLM engine)"
+MODE_DESC="Simple (Single vLLM engine)"
+if [ "$PD_MODE" = true ] && [ "$GATEWAY_MODE" = true ]; then
+    MODE_DESC="Gateway + P/D Disaggregation"
+elif [ "$GATEWAY_MODE" = true ]; then
+    MODE_DESC="Gateway (Intelligent routing)"
+elif [ "$PD_MODE" = true ]; then
+    MODE_DESC="P/D Disaggregation (Prefill + Decode engines)"
 fi
+echo -e "${CYAN}Mode:${NC} $MODE_DESC"
 echo ""
 
 # ==============================================================================
@@ -200,7 +217,15 @@ echo ""
 # Configure Envoy for the selected mode
 # ==============================================================================
 
-if [ "$PD_MODE" = true ]; then
+if [ "$GATEWAY_MODE" = true ]; then
+    echo -e "${BOLD}Configuring Envoy for gateway mode...${NC}"
+    if [ -f configs/envoy-gateway.yaml ]; then
+        export ENVOY_CONFIG="./configs/envoy-gateway.yaml"
+    else
+        echo -e "${YELLOW}Warning: configs/envoy-gateway.yaml not found, using default${NC}"
+        export ENVOY_CONFIG="./configs/envoy.yaml"
+    fi
+elif [ "$PD_MODE" = true ]; then
     echo -e "${BOLD}Configuring Envoy for P/D mode...${NC}"
     if [ -f configs/envoy-pd.yaml ]; then
         export ENVOY_CONFIG="./configs/envoy-pd.yaml"
@@ -215,16 +240,24 @@ fi
 echo ""
 
 # ==============================================================================
+# Build Docker Compose profiles
+# ==============================================================================
+
+PROFILES=""
+if [ "$GATEWAY_MODE" = true ]; then
+    PROFILES="$PROFILES --profile gateway"
+fi
+if [ "$PD_MODE" = true ]; then
+    PROFILES="$PROFILES --profile pd"
+fi
+
+# ==============================================================================
 # Pull Images
 # ==============================================================================
 
 if [ "$PULL_IMAGES" = true ]; then
     echo -e "${BOLD}Pulling Docker images...${NC}"
-    if [ "$PD_MODE" = true ]; then
-        docker compose --profile pd pull
-    else
-        docker compose pull
-    fi
+    docker compose $PROFILES pull
     echo ""
 fi
 
@@ -236,15 +269,13 @@ echo -e "${BOLD}Starting services...${NC}"
 echo ""
 
 if [ "$PD_MODE" = true ]; then
-    # In P/D mode, stop the default vllm service if running and start pd profile
+    # In P/D mode, stop the default vllm service if running
     docker compose stop vllm 2>/dev/null || true
     docker compose rm -f vllm 2>/dev/null || true
-    docker compose --profile pd up -d
-else
-    # In simple mode, ensure pd services are stopped
-    docker compose --profile pd stop 2>/dev/null || true
-    docker compose up -d
 fi
+
+# Start with the appropriate profiles
+docker compose $PROFILES up -d
 
 # ==============================================================================
 # Wait for Services
@@ -296,6 +327,13 @@ else
     wait_for_service "vllm" "http://localhost:${VLLM_PORT:-8000}/health" 600
 fi
 
+# Wait for gateway if enabled
+if [ "$GATEWAY_MODE" = true ]; then
+    echo ""
+    echo -e "${CYAN}Waiting for gateway to be ready...${NC}"
+    wait_for_service "gateway" "http://localhost:${GATEWAY_METRICS_PORT:-8080}/metrics" 60
+fi
+
 echo ""
 
 # ==============================================================================
@@ -321,6 +359,10 @@ echo -e "  ${CYAN}Chat API:${NC}      http://localhost:${HTTP_PORT:-80}/v1/chat/
 echo -e "  ${CYAN}Models API:${NC}    http://localhost:${HTTP_PORT:-80}/v1/models"
 echo -e "  ${CYAN}Health:${NC}        http://localhost:${HTTP_PORT:-80}/health"
 echo -e "  ${CYAN}Envoy Admin:${NC}   http://localhost:${ENVOY_ADMIN_PORT:-9901}/"
+
+if [ "$GATEWAY_MODE" = true ]; then
+    echo -e "  ${CYAN}Gateway Metrics:${NC} http://localhost:${GATEWAY_METRICS_PORT:-8080}/metrics"
+fi
 
 if [ "$PD_MODE" = true ]; then
     echo -e "  ${CYAN}Prefill:${NC}       http://localhost:${PREFILL_PORT:-8001}/"
