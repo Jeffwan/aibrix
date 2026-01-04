@@ -206,19 +206,24 @@ fi
 echo ""
 
 # ==============================================================================
-# Configure Envoy for the selected mode
+# Configure Gateway for the selected mode
 # ==============================================================================
 
-echo -e "${BOLD}Configuring Envoy with gateway-plugin (ext_proc)...${NC}"
+echo -e "${BOLD}Configuring gateway-plugin...${NC}"
+
+# Set backend configuration and routing algorithm based on mode
 if [ "$PD_MODE" = true ]; then
-    # P/D mode uses envoy-pd-gateway.yaml if available, otherwise envoy-gateway.yaml
-    if [ -f configs/envoy-pd-gateway.yaml ]; then
-        export ENVOY_CONFIG="./configs/envoy-pd-gateway.yaml"
-    else
-        export ENVOY_CONFIG="./configs/envoy-gateway.yaml"
-    fi
+    # P/D mode: register prefill and decode backends with roles, use 'pd' routing
+    export AIBRIX_STATIC_BACKENDS="prefill=prefill-engine:8000:${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}:prefill,decode=decode-engine:8000:${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}:decode"
+    export ROUTING_ALGORITHM="pd"
+    echo -e "  ${CYAN}Backends:${NC}  prefill-engine (prefill), decode-engine (decode)"
+    echo -e "  ${CYAN}Routing:${NC}   P/D disaggregation"
 else
-    export ENVOY_CONFIG="./configs/envoy-gateway.yaml"
+    # Default mode: single vLLM backend
+    export AIBRIX_STATIC_BACKENDS="vllm=vllm:8000:${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}"
+    export ROUTING_ALGORITHM="${ROUTING_ALGORITHM:-least_request}"
+    echo -e "  ${CYAN}Backends:${NC}  vllm"
+    echo -e "  ${CYAN}Routing:${NC}   ${ROUTING_ALGORITHM}"
 fi
 echo ""
 

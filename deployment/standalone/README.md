@@ -286,14 +286,12 @@ helm install aibrix ./dist/chart
 ## File Structure
 
 ```
-docker-compose/
+standalone/
 ├── docker-compose.yml     # Service definitions
 ├── .env.example           # Configuration template
 ├── start.sh               # Startup script
 ├── configs/
-│   ├── envoy.yaml         # Simple Envoy config (direct routing)
-│   ├── envoy-gateway.yaml # Envoy config with ext_proc (default)
-│   └── envoy-pd.yaml      # P/D disaggregation config
+│   └── envoy.yaml         # Envoy config with ext_proc for gateway-plugin
 └── README.md              # This file
 ```
 

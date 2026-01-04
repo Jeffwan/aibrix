@@ -87,8 +87,7 @@ services:
       - "${HTTP_PORT:-80}:80"
       - "${ENVOY_ADMIN_PORT:-9901}:9901"
     volumes:
-      # Default uses envoy-gateway.yaml with ext_proc for gateway-plugin
-      - ${ENVOY_CONFIG:-./configs/envoy-gateway.yaml}:/etc/envoy/envoy.yaml:ro
+      - ${ENVOY_CONFIG:-./configs/envoy.yaml}:/etc/envoy/envoy.yaml:ro
     command: ["-c", "/etc/envoy/envoy.yaml", "--log-level", "${ENVOY_LOG_LEVEL:-warn}"]
     depends_on:
       metadata-service:
@@ -229,18 +228,17 @@ services:
       # Redis connection
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      # Static backend configuration
-      AIBRIX_STATIC_BACKENDS: "vllm=vllm:8000:${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}"
+      # Static backend configuration (set by start.sh based on mode)
+      # Format: name=host:port:model[:role] - role is 'prefill' or 'decode' for P/D mode
+      AIBRIX_STATIC_BACKENDS: ${AIBRIX_STATIC_BACKENDS:-vllm=vllm:8000:${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}}
       AIBRIX_DEFAULT_MODEL: ${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
-      # Routing algorithm: random, least_request, least_load, prefix_cache_aware
+      # Routing algorithm: random, least_request, prefix_cache_aware, pd (for P/D mode)
       AIBRIX_ROUTING_ALGORITHM: ${ROUTING_ALGORITHM:-least_request}
       # Prefix cache settings
       AIBRIX_PREFIX_CACHE_TOKENIZER_TYPE: tiktoken
       AIBRIX_PREFIX_CACHE_BLOCK_SIZE: "128"
     depends_on:
       redis:
-        condition: service_healthy
-      vllm:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "grpc_health_probe", "-addr=:50052"]

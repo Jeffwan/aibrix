@@ -1,12 +1,17 @@
-# AIBrix Envoy Configuration
+# AIBrix Envoy Configuration with Gateway Plugin (ext_proc)
 #
-# This configuration provides:
-# - HTTP/1.1 and HTTP/2 support with auto-detection
-# - Intelligent routing to vLLM backends
-# - Streaming support for chat completions
-# - Health checks and circuit breaking
-# - Request/response timeouts for LLM workloads
-# - Admin interface for debugging
+# This configuration provides intelligent routing through the gateway-plugin:
+# - Request parsing and model extraction
+# - Routing algorithms (least_request, prefix_cache_aware, etc.)
+# - Rate limiting and authentication
+# - Request/response metrics
+#
+# The gateway-plugin acts as an External Processor (ext_proc) that:
+# 1. Receives request headers and body from Envoy
+# 2. Extracts model name and routing information
+# 3. Selects the best backend based on routing algorithm
+# 4. Returns the target backend via the "target-pod" header
+# 5. Envoy routes to the selected backend
 
 admin:
   address:
@@ -42,7 +47,7 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
                       log_format:
-                        text_format: "[%START_TIME%] \"%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%\" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% \"%REQ(X-REQUEST-ID)%\" \"%REQ(:AUTHORITY)%\" \"%UPSTREAM_HOST%\"\n"
+                        text_format: "[%START_TIME%] \"%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%\" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% \"%REQ(X-REQUEST-ID)%\" \"%UPSTREAM_HOST%\"\n"
 
                 route_config:
                   name: local_route
@@ -51,8 +56,7 @@ static_resources:
                       domains: ["*"]
                       routes:
                         # ============================================
-                        # OpenAI-Compatible Inference Endpoints
-                        # Route to vLLM backend(s)
+                        # Inference Endpoints - Routed via Gateway
                         # ============================================
 
                         - match:
@@ -61,10 +65,6 @@ static_resources:
                             cluster: vllm_backend
                             timeout: 600s
                             idle_timeout: 300s
-                            retry_policy:
-                              retry_on: "connect-failure,refused-stream,unavailable,cancelled,resource-exhausted"
-                              num_retries: 2
-                              per_try_timeout: 600s
 
                         - match:
                             prefix: "/v1/completions"
@@ -72,10 +72,6 @@ static_resources:
                             cluster: vllm_backend
                             timeout: 600s
                             idle_timeout: 300s
-                            retry_policy:
-                              retry_on: "connect-failure,refused-stream,unavailable,cancelled,resource-exhausted"
-                              num_retries: 2
-                              per_try_timeout: 600s
 
                         - match:
                             prefix: "/v1/embeddings"
@@ -84,8 +80,7 @@ static_resources:
                             timeout: 120s
 
                         # ============================================
-                        # Metadata Service Endpoints
-                        # Model registry, files, batch jobs
+                        # Metadata Service - Direct routing
                         # ============================================
 
                         - match:
@@ -121,27 +116,19 @@ static_resources:
                           direct_response:
                             status: 200
                             body:
-                              inline_string: '{"status":"ok"}'
+                              inline_string: '{"status":"ok","mode":"gateway"}'
 
                         - match:
-                            prefix: "/readyz"
+                            prefix: "/metrics"
                           route:
-                            cluster: vllm_backend
+                            cluster: gateway_metrics
                             timeout: 10s
-
-                        # ============================================
-                        # vLLM Direct Access (for debugging)
-                        # ============================================
 
                         - match:
                             prefix: "/v1/"
                           route:
                             cluster: vllm_backend
                             timeout: 120s
-
-                        # ============================================
-                        # Catch-all - 404
-                        # ============================================
 
                         - match:
                             prefix: "/"
@@ -151,18 +138,39 @@ static_resources:
                               inline_string: '{"error":"Not Found","message":"Use /v1/chat/completions, /v1/models, or /health"}'
 
                 http_filters:
-                  # Add request ID for tracing
+                  # ============================================
+                  # External Processor - Gateway Plugin
+                  # ============================================
+                  - name: envoy.filters.http.ext_proc
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: gateway_ext_proc
+                        timeout: 30s
+                      processing_mode:
+                        request_header_mode: SEND
+                        request_body_mode: BUFFERED
+                        response_header_mode: SEND
+                        response_body_mode: STREAMED
+                        request_trailer_mode: SKIP
+                        response_trailer_mode: SKIP
+                      message_timeout: 30s
+                      failure_mode_allow: false
+                      # Only process inference endpoints
+                      filter_metadata:
+                        envoy.filters.http.ext_proc:
+                          skip_non_inference: true
+
                   - name: envoy.filters.http.request_id
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.request_id.v3.RequestIDConfig
                       pack_trace_reason: false
 
-                  # CORS support
                   - name: envoy.filters.http.cors
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
 
-                  # Health check filter
                   - name: envoy.filters.http.health_check
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck
@@ -172,15 +180,60 @@ static_resources:
                           string_match:
                             exact: "/envoy-health"
 
-                  # Router (must be last)
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
   clusters:
     # ============================================
-    # vLLM Backend Cluster
-    # Primary inference endpoint
+    # Gateway Plugin (ext_proc)
+    # ============================================
+
+    - name: gateway_ext_proc
+      type: STRICT_DNS
+      dns_lookup_family: V4_ONLY
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: gateway_ext_proc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: gateway
+                      port_value: 50052
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          grpc_health_check: {}
+      connect_timeout: 5s
+
+    # ============================================
+    # Gateway Metrics
+    # ============================================
+
+    - name: gateway_metrics
+      type: STRICT_DNS
+      dns_lookup_family: V4_ONLY
+      load_assignment:
+        cluster_name: gateway_metrics
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: gateway
+                      port_value: 8080
+      connect_timeout: 5s
+
+    # ============================================
+    # vLLM Backend
     # ============================================
 
     - name: vllm_backend
@@ -188,7 +241,6 @@ static_resources:
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
 
-      # HTTP/1.1 for vLLM (it doesn't support HTTP/2 natively)
       typed_extension_protocol_options:
         envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
           "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
@@ -206,7 +258,6 @@ static_resources:
                       address: vllm
                       port_value: 8000
 
-      # Health checking
       health_checks:
         - timeout: 10s
           interval: 30s
@@ -215,7 +266,6 @@ static_resources:
           http_health_check:
             path: /health
 
-      # Circuit breaker
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
@@ -224,10 +274,8 @@ static_resources:
             max_requests: 1000
             max_retries: 3
 
-      # Connection pooling
       connect_timeout: 30s
 
-      # Outlier detection (remove unhealthy hosts)
       outlier_detection:
         consecutive_5xx: 5
         interval: 30s
@@ -235,8 +283,7 @@ static_resources:
         max_ejection_percent: 50
 
     # ============================================
-    # Metadata Service Cluster
-    # Model registry, files, batch management
+    # Metadata Service
     # ============================================
 
     - name: metadata_service
@@ -276,57 +323,3 @@ static_resources:
             max_connections: 100
             max_pending_requests: 100
             max_requests: 100
-
-# Uncomment below for advanced gateway routing with ext_proc
-# This requires the gateway-plugins service to be running
-#
-# To enable ext_proc routing:
-# 1. Uncomment the gateway service in docker-compose.yml
-# 2. Uncomment the ext_proc configuration below
-# 3. Change vllm_backend routes to use the gateway cluster
-#
-# ---
-# Example ext_proc configuration:
-#
-#   http_filters:
-#     - name: envoy.filters.http.ext_proc
-#       typed_config:
-#         "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
-#         grpc_service:
-#           envoy_grpc:
-#             cluster_name: gateway_ext_proc
-#           timeout: 30s
-#         processing_mode:
-#           request_header_mode: SEND
-#           request_body_mode: BUFFERED
-#           response_header_mode: SEND
-#           response_body_mode: STREAMED
-#         message_timeout: 30s
-#     - name: envoy.filters.http.router
-#       typed_config:
-#         "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-#
-#   clusters:
-#     - name: gateway_ext_proc
-#       type: STRICT_DNS
-#       dns_lookup_family: V4_ONLY
-#       typed_extension_protocol_options:
-#         envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-#           "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-#           explicit_http_config:
-#             http2_protocol_options: {}
-#       load_assignment:
-#         cluster_name: gateway_ext_proc
-#         endpoints:
-#           - lb_endpoints:
-#               - endpoint:
-#                   address:
-#                     socket_address:
-#                       address: gateway
-#                       port_value: 50052
-#       health_checks:
-#         - timeout: 5s
-#           interval: 10s
-#           unhealthy_threshold: 3
-#           healthy_threshold: 1
-#           grpc_health_check: {}

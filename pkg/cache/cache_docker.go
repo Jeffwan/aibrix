@@ -40,6 +40,10 @@ type StaticBackend struct {
 	Models  []string `json:"models"`
 	Weight  int      `json:"weight,omitempty"`
 	Enabled bool     `json:"enabled"`
+	// Role is the P/D role: "prefill" or "decode" (optional)
+	Role string `json:"role,omitempty"`
+	// RoleSet groups prefill/decode pairs together (optional, defaults to "default")
+	RoleSet string `json:"roleset,omitempty"`
 }
 
 // StaticBackendConfig represents the configuration file format
@@ -132,7 +136,7 @@ func registerStaticBackends(st *Store, opts DockerModeOptions) error {
 		}
 
 		for _, model := range backend.Models {
-			if err := st.RegisterStaticBackend(backend.Name, backend.Host, backend.Port, model); err != nil {
+			if err := st.RegisterStaticBackend(backend.Name, backend.Host, backend.Port, model, backend.Role, backend.RoleSet); err != nil {
 				klog.Errorf("Failed to register backend %s for model %s: %v", backend.Name, model, err)
 			}
 		}
@@ -160,7 +164,11 @@ func loadBackendsFromFile(path string) ([]StaticBackend, error) {
 }
 
 // parseStaticBackends parses the AIBRIX_STATIC_BACKENDS environment variable
-// Format: "name=host:port:model,name2=host2:port2:model2" or "host:port,host2:port2"
+// Format: "name=host:port:model:role,name2=host2:port2:model2:role2" or "host:port,host2:port2"
+// Role is optional and can be "prefill" or "decode" for P/D disaggregation
+// Examples:
+//   - "vllm=vllm:8000:meta-llama/Llama-3.1-8B-Instruct" (single backend)
+//   - "prefill=prefill-engine:8000:model:prefill,decode=decode-engine:8000:model:decode" (P/D mode)
 func parseStaticBackends(backends string, defaultModel string) []StaticBackend {
 	var result []StaticBackend
 
@@ -173,15 +181,16 @@ func parseStaticBackends(backends string, defaultModel string) []StaticBackend {
 		var backend StaticBackend
 		backend.Enabled = true
 		backend.Weight = 100
+		backend.RoleSet = "default" // Default roleset for P/D pairing
 
-		// Parse format: name=host:port:model or host:port
+		// Parse format: name=host:port:model:role or host:port
 		if strings.Contains(entry, "=") {
 			parts := strings.SplitN(entry, "=", 2)
 			backend.Name = strings.TrimSpace(parts[0])
 			entry = parts[1]
 		}
 
-		// Parse host:port:model
+		// Parse host:port:model:role
 		parts := strings.Split(entry, ":")
 		if len(parts) >= 2 {
 			backend.Host = parts[0]
@@ -189,6 +198,12 @@ func parseStaticBackends(backends string, defaultModel string) []StaticBackend {
 
 			if len(parts) >= 3 {
 				backend.Models = []string{parts[2]}
+			}
+			if len(parts) >= 4 {
+				role := strings.ToLower(strings.TrimSpace(parts[3]))
+				if role == "prefill" || role == "decode" {
+					backend.Role = role
+				}
 			}
 		}
 
@@ -212,19 +227,33 @@ func parseStaticBackends(backends string, defaultModel string) []StaticBackend {
 }
 
 // RegisterStaticBackend manually registers a backend endpoint
-func (c *Store) RegisterStaticBackend(name, host string, port int, model string) error {
-	klog.Infof("Registering static backend: name=%s, host=%s, port=%d, model=%s", name, host, port, model)
+// role and roleSet are optional parameters for P/D disaggregation mode
+func (c *Store) RegisterStaticBackend(name, host string, port int, model, role, roleSet string) error {
+	klog.Infof("Registering static backend: name=%s, host=%s, port=%d, model=%s, role=%s, roleSet=%s",
+		name, host, port, model, role, roleSet)
+
+	// Build labels
+	labels := map[string]string{
+		constants.ModelLabelName: model,
+		constants.ModelPortName:  fmt.Sprintf("%d", port),
+		"aibrix.ai/static":       "true",
+	}
+
+	// Add P/D labels if role is specified
+	if role != "" {
+		labels["role-name"] = role
+		if roleSet == "" {
+			roleSet = "default"
+		}
+		labels["roleset-name"] = roleSet
+	}
 
 	// Create a synthetic pod that represents the backend
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "docker",
-			Labels: map[string]string{
-				constants.ModelLabelName: model,
-				constants.ModelPortName:  fmt.Sprintf("%d", port),
-				"aibrix.ai/static":       "true",
-			},
+			Labels:    labels,
 		},
 		Spec: v1.PodSpec{
 			// Hostname is used for routing in Docker mode
