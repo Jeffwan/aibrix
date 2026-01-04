@@ -63,10 +63,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      AIBRIX_BACKEND_REGISTRY: /etc/aibrix/backends.json
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    volumes:
-      - ./configs/backends.json:/etc/aibrix/backends.json:ro
     command: ["aibrix_metadata", "--host", "0.0.0.0", "--port", "8090"]
     depends_on:
       redis:

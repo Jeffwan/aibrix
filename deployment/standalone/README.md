@@ -291,8 +291,9 @@ docker-compose/
 ├── .env.example           # Configuration template
 ├── start.sh               # Startup script
 ├── configs/
-│   ├── envoy.yaml         # Envoy proxy configuration
-│   └── backends.json      # Backend registry
+│   ├── envoy.yaml         # Simple Envoy config (direct routing)
+│   ├── envoy-gateway.yaml # Envoy config with ext_proc (default)
+│   └── envoy-pd.yaml      # P/D disaggregation config
 └── README.md              # This file
 ```
 
