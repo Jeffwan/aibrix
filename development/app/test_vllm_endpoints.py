@@ -122,7 +122,7 @@ def test_health_endpoints(base_url: str, result: TestResult):
 
 def test_lora_adapters(base_url: str, result: TestResult):
     """Test LoRA adapter management endpoints."""
-    print("\n--- Testing LoRA Adapter Endpoints ---")
+    print("\n--- Testing LoRA Adapter Endpoints (Success Cases) ---")
 
     lora_name = "test-lora-adapter"
     lora_path = "/path/to/adapter"
@@ -150,18 +150,6 @@ def test_lora_adapters(base_url: str, result: TestResult):
     else:
         result.add_fail("LoRA adapter in models list", f"Status {status}: {data}")
 
-    # Load same adapter again (should succeed with "already loaded")
-    status, data = make_request(
-        base_url,
-        "/v1/load_lora_adapter",
-        method="POST",
-        data={"lora_name": lora_name, "lora_path": lora_path},
-    )
-    if status == 200:
-        result.add_pass("Load LoRA adapter (duplicate)", f"Response: {data}")
-    else:
-        result.add_fail("Load LoRA adapter (duplicate)", f"Status {status}: {data}")
-
     # Unload LoRA adapter
     status, data = make_request(
         base_url,
@@ -184,6 +172,111 @@ def test_lora_adapters(base_url: str, result: TestResult):
             result.add_fail("LoRA adapter removed from models", f"Adapter still in {model_ids}")
     else:
         result.add_fail("LoRA adapter removed from models", f"Status {status}: {data}")
+
+
+def test_lora_adapters_errors(base_url: str, result: TestResult):
+    """Test LoRA adapter error handling."""
+    print("\n--- Testing LoRA Adapter Endpoints (Error Cases) ---")
+
+    # Error: Missing lora_name
+    status, data = make_request(
+        base_url,
+        "/v1/load_lora_adapter",
+        method="POST",
+        data={"lora_path": "/path/to/adapter"},
+    )
+    if status == 400:
+        result.add_pass("Load LoRA (error: missing lora_name)")
+    else:
+        result.add_fail("Load LoRA (error: missing lora_name)", f"Expected 400, got {status}")
+
+    # Error: Missing lora_path
+    status, data = make_request(
+        base_url,
+        "/v1/load_lora_adapter",
+        method="POST",
+        data={"lora_name": "test-adapter"},
+    )
+    if status == 400:
+        result.add_pass("Load LoRA (error: missing lora_path)")
+    else:
+        result.add_fail("Load LoRA (error: missing lora_path)", f"Expected 400, got {status}")
+
+    # Error: Missing both fields
+    status, data = make_request(
+        base_url,
+        "/v1/load_lora_adapter",
+        method="POST",
+        data={},
+    )
+    if status == 400:
+        result.add_pass("Load LoRA (error: missing both fields)")
+    else:
+        result.add_fail("Load LoRA (error: missing both fields)", f"Expected 400, got {status}")
+
+    # Load an adapter first for duplicate test
+    make_request(
+        base_url,
+        "/v1/load_lora_adapter",
+        method="POST",
+        data={"lora_name": "duplicate-test", "lora_path": "/path/to/adapter"},
+    )
+
+    # Error: Adapter already loaded
+    status, data = make_request(
+        base_url,
+        "/v1/load_lora_adapter",
+        method="POST",
+        data={"lora_name": "duplicate-test", "lora_path": "/path/to/adapter"},
+    )
+    if status == 400:
+        result.add_pass("Load LoRA (error: already loaded)")
+    else:
+        result.add_fail("Load LoRA (error: already loaded)", f"Expected 400, got {status}")
+
+    # Clean up
+    make_request(
+        base_url,
+        "/v1/unload_lora_adapter",
+        method="POST",
+        data={"lora_name": "duplicate-test"},
+    )
+
+    # Error: Adapter path not found (404)
+    status, data = make_request(
+        base_url,
+        "/v1/load_lora_adapter",
+        method="POST",
+        data={"lora_name": "notfound-adapter", "lora_path": "/nonexistent/path"},
+    )
+    if status == 404:
+        result.add_pass("Load LoRA (error: path not found)")
+    else:
+        result.add_fail("Load LoRA (error: path not found)", f"Expected 404, got {status}")
+
+    # Error: Unload missing lora_name
+    status, data = make_request(
+        base_url,
+        "/v1/unload_lora_adapter",
+        method="POST",
+        data={},
+    )
+    if status == 400:
+        result.add_pass("Unload LoRA (error: missing lora_name)")
+    else:
+        result.add_fail("Unload LoRA (error: missing lora_name)", f"Expected 400, got {status}")
+
+    # Error: Unload non-existent adapter
+    status, data = make_request(
+        base_url,
+        "/v1/unload_lora_adapter",
+        method="POST",
+        data={"lora_name": "non-existent-adapter"},
+    )
+    if status == 400:
+        result.add_pass("Unload LoRA (error: adapter not found)")
+    else:
+        result.add_fail("Unload LoRA (error: adapter not found)", f"Expected 400, got {status}")
 
 
 def test_tokenization(base_url: str, result: TestResult):
@@ -311,6 +404,7 @@ def main():
     # Run tests
     test_health_endpoints(args.base_url, result)
     test_lora_adapters(args.base_url, result)
+    test_lora_adapters_errors(args.base_url, result)
     test_tokenization(args.base_url, result)
     test_server_load(args.base_url, result)
     test_metrics(args.base_url, result)

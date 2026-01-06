@@ -266,11 +266,55 @@ def get_models():
 
 @app.route("/v1/load_lora_adapter", methods=["POST"])
 @auth.login_required
-def load_model():
-    lora_name = request.json.get("lora_name")
-    # Check if the model already exists
+def load_lora_adapter():
+    """
+    Load a LoRA adapter. Matches vLLM error handling behavior.
+    """
+    data = request.json or {}
+    lora_name = data.get("lora_name")
+    lora_path = data.get("lora_path")
+
+    # Validate required fields
+    if not lora_name or not lora_path:
+        return (
+            jsonify({
+                "error": {
+                    "message": "Both 'lora_name' and 'lora_path' must be provided.",
+                    "type": "InvalidUserInput",
+                    "param": None,
+                    "code": 400,
+                }
+            }),
+            400,
+        )
+
+    # Check if adapter already loaded
     if any(model["id"] == lora_name for model in models):
-        return jsonify({"status": "success", "message": "Model already loaded"}), 200
+        return (
+            jsonify({
+                "error": {
+                    "message": f"The lora adapter '{lora_name}' has already been loaded.",
+                    "type": "InvalidUserInput",
+                    "param": None,
+                    "code": 400,
+                }
+            }),
+            400,
+        )
+
+    # Simulate path not found for paths containing "nonexistent" or "/invalid/"
+    if "nonexistent" in lora_path.lower() or "/invalid/" in lora_path.lower():
+        return (
+            jsonify({
+                "error": {
+                    "message": f"Loading lora {lora_name} failed: No adapter found for {lora_path}",
+                    "type": "NotFoundError",
+                    "param": None,
+                    "code": 404,
+                }
+            }),
+            404,
+        )
 
     new_model = {
         "id": lora_name,
@@ -278,7 +322,7 @@ def load_model():
         "object": "model",
         "owned_by": "vllm",
         "parent": None,
-        "root": request.json.get("lora_path"),
+        "root": lora_path,
     }
 
     models.append(new_model)
@@ -287,10 +331,43 @@ def load_model():
 
 @app.route("/v1/unload_lora_adapter", methods=["POST"])
 @auth.login_required
-def unload_model():
-    model_id = request.json.get("lora_name")
+def unload_lora_adapter():
+    """
+    Unload a LoRA adapter. Matches vLLM error handling behavior.
+    """
     global models
-    models = [model for model in models if model["id"] != model_id]
+    data = request.json or {}
+    lora_name = data.get("lora_name")
+
+    # Validate required field
+    if not lora_name:
+        return (
+            jsonify({
+                "error": {
+                    "message": "'lora_name' must be provided.",
+                    "type": "InvalidUserInput",
+                    "param": None,
+                    "code": 400,
+                }
+            }),
+            400,
+        )
+
+    # Check if adapter exists
+    if not any(model["id"] == lora_name for model in models):
+        return (
+            jsonify({
+                "error": {
+                    "message": f"The lora adapter '{lora_name}' cannot be found.",
+                    "type": "NotFoundError",
+                    "param": None,
+                    "code": 400,
+                }
+            }),
+            400,
+        )
+
+    models = [model for model in models if model["id"] != lora_name]
     return jsonify({"status": "success", "message": "Model unloaded successfully"}), 200
 
 
