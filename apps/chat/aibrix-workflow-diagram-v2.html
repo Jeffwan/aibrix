@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AIBrix Multi-Modal Workflow</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #08090f;
+    color: #c8d6e8;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    padding: 48px 32px;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    color: #e8f0fb;
+    margin-bottom: 6px;
+    letter-spacing: -0.3px;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: #4a5a72;
+    font-family: monospace;
+    letter-spacing: .08em;
+    margin-bottom: 40px;
+  }
+
+  /* ── Layout ──────────────────────────────────── */
+  .diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  /* ── Shared rows ─────────────────────────────── */
+  .shared-row {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
+  /* ── Column split ────────────────────────────── */
+  .split {
+    display: flex;
+    width: 100%;
+    gap: 0;
+    position: relative;
+  }
+
+  .col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 16px;
+    position: relative;
+  }
+
+  /* col borders */
+  .col-text  { border-left: 1px solid #1a2436; border-right: 1px dashed #1a2436; }
+  .col-image { border-right: 1px dashed #1a2436; }
+  .col-video { border-right: 1px solid #1a2436; }
+
+  .col-label {
+    font-family: monospace;
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    border: 1px solid;
+  }
+  .cl-text  { color: #60a5fa; border-color: rgba(96,165,250,.25); background: rgba(96,165,250,.06); }
+  .cl-image { color: #f59e0b; border-color: rgba(245,158,11,.25); background: rgba(245,158,11,.06); }
+  .cl-video { color: #a78bfa; border-color: rgba(167,139,250,.25); background: rgba(167,139,250,.06); }
+
+  /* ── Node boxes ──────────────────────────────── */
+  .node {
+    position: relative;
+    border-radius: 8px;
+    padding: 11px 14px;
+    border: 1px solid;
+    width: 100%;
+    max-width: 260px;
+    text-align: center;
+    background: #0e1118;
+  }
+  .node-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 3px;
+    line-height: 1.3;
+  }
+  .node-sub {
+    font-family: monospace;
+    font-size: 10px;
+    color: #4a5a72;
+    line-height: 1.4;
+  }
+  .node-badge {
+    position: absolute;
+    top: -8px;
+    right: 8px;
+    font-family: monospace;
+    font-size: 9px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    letter-spacing: .06em;
+  }
+
+  /* colour themes */
+  .n-blue   { border-color: rgba(96,165,250,.3);  }
+  .n-blue .node-title   { color: #60a5fa; }
+  .n-blue .node-badge   { background: rgba(96,165,250,.15);  color: #60a5fa; }
+
+  .n-green  { border-color: rgba(16,185,129,.3);  }
+  .n-green .node-title  { color: #34d399; }
+  .n-green .node-badge  { background: rgba(16,185,129,.15);  color: #34d399; }
+
+  .n-amber  { border-color: rgba(245,158,11,.3);  }
+  .n-amber .node-title  { color: #fbbf24; }
+  .n-amber .node-badge  { background: rgba(245,158,11,.15);  color: #fbbf24; }
+
+  .n-purple { border-color: rgba(167,139,250,.3); }
+  .n-purple .node-title { color: #c4b5fd; }
+  .n-purple .node-badge { background: rgba(167,139,250,.15); color: #c4b5fd; }
+
+  .n-cyan   { border-color: rgba(6,182,212,.3);   }
+  .n-cyan .node-title   { color: #22d3ee; }
+  .n-cyan .node-badge   { background: rgba(6,182,212,.15);   color: #22d3ee; }
+
+  .n-red    { border-color: rgba(239,100,100,.3); }
+  .n-red .node-title    { color: #f87171; }
+  .n-red .node-badge    { background: rgba(239,100,100,.15); color: #f87171; }
+
+  .n-pink   { border-color: rgba(236,72,153,.3);  }
+  .n-pink .node-title   { color: #f472b6; }
+  .n-pink .node-badge   { background: rgba(236,72,153,.15);  color: #f472b6; }
+
+  .n-gray   { border-color: rgba(255,255,255,.1); }
+  .n-gray .node-title   { color: #94a3b8; }
+
+  /* optional node */
+  .optional { opacity: .75; }
+  .optional-badge {
+    font-family: monospace; font-size: 9px; padding: 1px 7px; border-radius: 10px;
+    background: rgba(239,100,100,.12); color: #f87171;
+    border: 1px solid rgba(239,100,100,.3);
+    position: absolute; top: -8px; left: 8px;
+    letter-spacing: .04em;
+  }
+
+  /* ── Arrows ──────────────────────────────────── */
+  .arrow-down {
+    width: 1px;
+    height: 28px;
+    background: #1e2d42;
+    margin: 0 auto;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .arrow-down::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid #1e2d42;
+  }
+
+  .arrow-blue::after   { border-top-color: rgba(96,165,250,.5); }
+  .arrow-blue { background: rgba(96,165,250,.25); }
+
+  .arrow-amber::after  { border-top-color: rgba(245,158,11,.5); }
+  .arrow-amber { background: rgba(245,158,11,.25); }
+
+  .arrow-purple::after { border-top-color: rgba(167,139,250,.5); }
+  .arrow-purple { background: rgba(167,139,250,.25); }
+
+  .arrow-green::after  { border-top-color: rgba(16,185,129,.5); }
+  .arrow-green { background: rgba(16,185,129,.25); }
+
+  /* shared arrow from top node */
+  .arrow-shared {
+    width: 1px;
+    height: 24px;
+    background: #2a3d54;
+    position: relative;
+  }
+  .arrow-shared::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid #2a3d54;
+  }
+
+  /* ── Fan-out lines ───────────────────────────── */
+  .fanout {
+    width: 100%;
+    height: 28px;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+  }
+  .fanout svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ── Fan-in lines ────────────────────────────── */
+  .fanin {
+    width: 100%;
+    height: 28px;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+  }
+  .fanin svg { width: 100%; height: 100%; }
+
+  /* ── Spacer ──────────────────────────────────── */
+  .spacer { flex: 1; }
+
+  /* ── Side note (shared service) ─────────────── */
+  .side-note {
+    font-family: monospace;
+    font-size: 9px;
+    color: #34d399;
+    letter-spacing: .06em;
+    margin-bottom: 4px;
+  }
+
+  /* ── Legend ──────────────────────────────────── */
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin-top: 40px;
+    padding: 16px 20px;
+    border: 1px solid #1a2436;
+    border-radius: 8px;
+    background: #0b0d14;
+    flex-wrap: wrap;
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #4a5a72;
+  }
+  .legend-line {
+    width: 24px; height: 2px;
+  }
+  .ll-blue   { background: rgba(96,165,250,.6); }
+  .ll-amber  { background: rgba(245,158,11,.6); }
+  .ll-purple { background: rgba(167,139,250,.6); }
+  .ll-green  { background: rgba(16,185,129,.6); border-top: 1px dashed rgba(16,185,129,.6); height: 0; }
+  .ll-dashed { border-top: 2px dashed rgba(255,255,255,.15); height: 0; }
+</style>
+</head>
+<body>
+
+<div class="diagram">
+
+  <h1>AIBrix Multi-Modal Request Flow</h1>
+  <br>
+
+  <!-- USER -->
+  <div class="shared-row">
+    <div class="node n-gray" style="max-width:320px">
+      <div class="node-title">User Request</div>
+      <div class="node-sub">text · image · mic </div>
+    </div>
+  </div>
+
+  <div class="arrow-down arrow-shared" style="height:20px"></div>
+
+  <!-- OPTIONAL ASR -->
+  <div class="shared-row">
+    <div class="node n-pink optional" style="max-width:240px">
+      <span class="optional-badge">optional</span>
+      <div class="node-title">ASR</div>
+      <div class="node-sub"> Voice to Text Transcription <br>Qwen3-ASR</div>
+    </div>
+  </div>
+
+  <div class="arrow-down arrow-shared" style="height:20px"></div>
+
+  <!-- GATEWAY -->
+  <div class="shared-row">
+    <div class="node n-cyan" style="max-width:320px">
+      <span class="node-badge">FastAPI</span>
+      <div class="node-title">Gateway / BFF</div>
+      <div class="node-sub">auth · rate limit · SSE session · feature flags </div>
+    </div>
+  </div>
+
+  <div class="arrow-down arrow-shared" style="height:20px"></div>
+
+  <!-- INTENT ROUTER -->
+  <div class="shared-row">
+    <div class="node n-green optional" style="max-width:300px">
+      <span class="optional-badge">optional</span>
+      <div class="node-title">Intent Router</div>
+      <div class="node-sub">sub-routing only · search? tools? prompt rewrite?<br>explicit tab always overrides</div>
+    </div>
+  </div>
+
+  <div class="arrow-down arrow-shared" style="height:20px"></div>
+
+  <!-- MODE DECISION -->
+  <div class="shared-row">
+    <div class="node n-gray" style="max-width:260px; border-radius:24px; background:#0c1016">
+      <div class="node-title" style="color:#e8f0fb">Mode Decision</div>
+      <div class="node-sub">text-chat · vision · image-gen · video-gen</div>
+    </div>
+  </div>
+
+  <!-- Fan-out -->
+  <div class="fanout">
+    <svg viewBox="0 0 1000 28" preserveAspectRatio="none">
+      <!-- center vertical line -->
+      <line x1="500" y1="0" x2="500" y2="10" stroke="#2a3d54" stroke-width="1"/>
+      <!-- horizontal spread -->
+      <line x1="170" y1="10" x2="830" y2="10" stroke="#2a3d54" stroke-width="1"/>
+      <!-- drops to each column center -->
+      <line x1="170" y1="10" x2="170" y2="28" stroke="rgba(96,165,250,.4)"  stroke-width="1.5"/>
+      <line x1="500" y1="10" x2="500" y2="28" stroke="rgba(245,158,11,.4)"  stroke-width="1.5"/>
+      <line x1="830" y1="10" x2="830" y2="28" stroke="rgba(167,139,250,.4)" stroke-width="1.5"/>
+      <!-- arrowheads -->
+      <polygon points="166,24 170,28 174,24" fill="rgba(96,165,250,.5)"/>
+      <polygon points="496,24 500,28 504,24" fill="rgba(245,158,11,.5)"/>
+      <polygon points="826,24 830,28 834,24" fill="rgba(167,139,250,.5)"/>
+    </svg>
+  </div>
+
+  <!-- THREE COLUMNS -->
+  <div class="split">
+
+    <!-- TEXT / VISION -->
+    <div class="col col-text">
+      <div class="col-label cl-text">Text / Vision</div>
+
+      <!-- Sub-intent -->
+      <div class="node n-blue">
+        <div class="node-title">Sub-intent Classify</div>
+        <div class="node-sub">search? tools? model variant?</div>
+      </div>
+      <div class="arrow-down arrow-blue"></div>
+
+      <!-- Web search optional -->
+      <div class="node n-red optional" style="max-width:220px">
+        <span class="optional-badge">optional</span>
+        <div class="node-title">Web Search</div>
+        <div class="node-sub">Tavily · inject ctx</div>
+      </div>
+      <div class="arrow-down arrow-blue"></div>
+
+      <!-- Vision encoder optional -->
+      <div class="node n-green optional">
+        <span class="optional-badge">optional</span>
+        <span class="node-badge">disagg pod</span>
+        <div class="node-title">Vision Encoder</div>
+        <div class="node-sub">ViT → visual tokens</div>
+      </div>
+      <div class="arrow-down arrow-blue"></div>
+
+      <!-- KV Cache -->
+      <div class="node n-green">
+        <div class="node-title">KV Cache (PrisKV)</div>
+        <div class="node-sub">shared prefill↔decode</div>
+      </div>
+      <div class="arrow-down arrow-blue"></div>
+
+      <!-- AIBrix Prefill -->
+      <div class="node n-blue">
+        <span class="node-badge">AIBrix</span>
+        <div class="node-title">Prefill Pod</div>
+        <div class="node-sub">H100 · prompt + visual tokens</div>
+      </div>
+      <div class="arrow-down arrow-blue"></div>
+
+      <!-- AIBrix Decode -->
+      <div class="node n-blue">
+        <span class="node-badge">AIBrix</span>
+        <div class="node-title">Decode Pod</div>
+        <div class="node-sub">L4 · token stream → SSE</div>
+      </div>
+      <div class="arrow-down arrow-blue"></div>
+
+      <!-- TTS optional -->
+      <div class="node n-pink optional">
+        <span class="optional-badge">optional</span>
+        <div class="node-title">TTS</div>
+        <div class="node-sub">MegaTTS3 · audio chunks</div>
+      </div>
+
+      <div class="spacer"></div>
+    </div>
+
+    <!-- IMAGE GEN -->
+    <div class="col col-image">
+      <div class="col-label cl-image">Image Gen</div>
+
+      <!-- Prompt enhance -->
+      <div class="node n-amber">
+        <div class="node-title">Prompt Enhancer</div>
+        <div class="side-note" style="font-size:9px; color:#34d399; margin-bottom:4px">↑ reuses LLM service</div>
+        <div class="node-sub">LLM prompt rewrite</div>
+      </div>
+      <div class="arrow-down arrow-amber"></div>
+
+      <!-- vLLM-Omni -->
+      <div class="node n-amber">
+        <span class="node-badge">Cache-DiT</span>
+        <div class="node-title">vLLM-Omni (DiT)</div>
+        <div class="node-sub">Qwen-Image · FLUX.1-dev<br>Qwen-Image-Edit</div>
+      </div>
+      <div class="arrow-down arrow-amber"></div>
+
+      <!-- S3 -->
+      <div class="node n-amber">
+        <div class="node-title">S3 Upload</div>
+        <div class="node-sub">image URL → gallery</div>
+      </div>
+      <div class="arrow-down arrow-amber"></div>
+
+      <!-- SSE image done -->
+      <div class="node n-gray" style="max-width:220px">
+        <div class="node-title">SSE: image_done</div>
+        <div class="node-sub">pre-signed URL to client</div>
+      </div>
+
+      <div class="spacer"></div>
+    </div>
+
+    <!-- VIDEO GEN -->
+    <div class="col col-video">
+      <div class="col-label cl-video">Video Gen</div>
+
+      <!-- Prompt enhance -->
+      <div class="node n-purple">
+        <div class="node-title">Prompt Enhancer</div>
+        <div class="side-note" style="font-size:9px; color:#34d399; margin-bottom:4px">↑ reuses LLM service</div>
+        <div class="node-sub">LLM prompt rewrite</div>
+      </div>
+      <div class="arrow-down arrow-purple"></div>
+
+      <!-- Redis Streams -->
+      <div class="node n-purple">
+        <span class="node-badge">async</span>
+        <div class="node-title">Job Queue</div>
+        <div class="node-sub">Redis Streams · SSE: job_queued</div>
+      </div>
+      <div class="arrow-down arrow-purple"></div>
+
+      <!-- Video worker -->
+      <div class="node n-purple">
+        <div class="node-title">Video Worker</div>
+        <div class="node-sub">HunyuanVideo-1.5 · LTX-Video<br>Wan2.1</div>
+      </div>
+      <div class="arrow-down arrow-purple"></div>
+
+      <!-- S3 -->
+      <div class="node n-purple">
+        <div class="node-title">S3 Upload</div>
+        <div class="node-sub">MP4 → pre-signed URL</div>
+      </div>
+      <div class="arrow-down arrow-purple"></div>
+
+      <!-- SSE -->
+      <div class="node n-gray" style="max-width:220px">
+        <div class="node-title">SSE: video_done</div>
+        <div class="node-sub">progress events → final URL</div>
+      </div>
+
+      <div class="spacer"></div>
+    </div>
+
+  </div><!-- end split -->
+
+  <!-- Fan-in -->
+  <div class="fanin">
+    <svg viewBox="0 0 1000 28" preserveAspectRatio="none">
+      <line x1="170" y1="0"  x2="170" y2="18" stroke="rgba(96,165,250,.3)"  stroke-width="1.5"/>
+      <line x1="500" y1="0"  x2="500" y2="18" stroke="rgba(245,158,11,.3)"  stroke-width="1.5"/>
+      <line x1="830" y1="0"  x2="830" y2="18" stroke="rgba(167,139,250,.3)" stroke-width="1.5"/>
+      <line x1="170" y1="18" x2="830" y2="18" stroke="#2a3d54" stroke-width="1"/>
+      <line x1="500" y1="18" x2="500" y2="28" stroke="#2a3d54" stroke-width="1"/>
+      <polygon points="496,24 500,28 504,24" fill="#2a3d54"/>
+    </svg>
+  </div>
+
+  <!-- SSE DELIVERY -->
+  <div class="shared-row">
+    <div class="node n-cyan" style="max-width:340px">
+      <div class="node-title">SSE Delivery to Client</div>
+      <div class="node-sub">token · image_done · video_done · audio_chunk · error</div>
+    </div>
+  </div>
+
+</div><!-- end diagram -->
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-line ll-blue"></div> Text / Vision path</div>
+  <div class="legend-item"><div class="legend-line ll-amber"></div> Image Gen path</div>
+  <div class="legend-item"><div class="legend-line ll-purple"></div> Video Gen path</div>
+  <div class="legend-item"><div class="legend-line ll-green"></div> Shared service reuse</div>
+  <div class="legend-item"><div class="legend-line ll-dashed"></div> Optional step</div>
+  <div class="legend-item" style="color:#f87171">● optional</div>
+</div>
+
+</body>
+</html>

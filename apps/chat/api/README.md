@@ -1,7 +1,5 @@
 # AIBrix Chat API
 
-Backend service for the chat portal. Proxies requests to LLM inference endpoints.
+Python FastAPI backend (BFF) for the AIBrix Chat portal.
 
-## Status
-
-Placeholder - coming soon.
+See [../README.md](../README.md) for quick start and full documentation.

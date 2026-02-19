@@ -1,19 +1,8 @@
-# AIBrix Chat
+# AIBrix Chat Web
 
-Chat portal for interacting with LLM models via OpenAI-compatible APIs.
+React + Vite + Tailwind frontend for the AIBrix Chat portal.
 
-## Development
-
-```bash
-npm install
-npm run dev
-```
-
-## Build
-
-```bash
-npm run build
-```
+See [../README.md](../README.md) for quick start and full documentation.
 
 ## Guidelines
 
@@ -21,6 +10,6 @@ See [GUIDELINES.md](./GUIDELINES.md) for AI and design system guidelines.
 
 ## Attributions
 
-This project includes components from [shadcn/ui](https://ui.shadcn.com/) used under [MIT license](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md).
+This project includes components from [shadcn/ui](https://ui.shadcn.com/) under [MIT license](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md).
 
-This project includes photos from [Unsplash](https://unsplash.com) used under [license](https://unsplash.com/license).
+This project includes photos from [Unsplash](https://unsplash.com) under [Unsplash license](https://unsplash.com/license).
