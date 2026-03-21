@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -64,12 +65,29 @@ func main() {
 		klog.Fatal("--endpoints-config is required when running in standalone mode")
 	}
 
-	redisClient := utils.GetRedisClient()
-	defer func() {
-		if err := redisClient.Close(); err != nil {
-			klog.Warningf("Error closing Redis client: %v", err)
+	var redisClient *redis.Client
+	if standalone {
+		// In standalone mode, Redis is optional.
+		// Try to connect but continue without it if unavailable.
+		redisClient = utils.TryGetRedisClient()
+		if redisClient != nil {
+			klog.Info("Connected to Redis (rate limiting enabled)")
+			defer func() {
+				if err := redisClient.Close(); err != nil {
+					klog.Warningf("Error closing Redis client: %v", err)
+				}
+			}()
+		} else {
+			klog.Info("Redis not available, rate limiting disabled")
 		}
-	}()
+	} else {
+		redisClient = utils.GetRedisClient()
+		defer func() {
+			if err := redisClient.Close(); err != nil {
+				klog.Warningf("Error closing Redis client: %v", err)
+			}
+		}()
+	}
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)

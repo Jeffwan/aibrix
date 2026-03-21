@@ -68,7 +68,7 @@ func (s *Server) HandleRequestHeaders(ctx context.Context, requestID string, req
 		}
 	}
 
-	if username != "" {
+	if username != "" && s.redisClient != nil {
 		user, err = utils.GetUser(ctx, utils.User{Name: username}, s.redisClient)
 		if err != nil {
 			klog.ErrorS(err, "unable to process user info", "requestID", requestID, "username", username)
@@ -85,6 +85,8 @@ func (s *Server) HandleRequestHeaders(ctx context.Context, requestID string, req
 			klog.ErrorS(err, "error on checking limits", "requestID", requestID, "username", username)
 			return errRes, utils.User{}, rpm, routingCtx
 		}
+	} else if username != "" {
+		user = utils.User{Name: username}
 	}
 
 	routingCtx = types.NewRoutingContext(ctx, "", "", "", requestID, user.Name)
