@@ -126,12 +126,6 @@ static_resources:
                     socket_address:
                       address: 127.0.0.1
                       port_value: 50052
-      health_checks:
-        - timeout: 5s
-          interval: 10s
-          unhealthy_threshold: 3
-          healthy_threshold: 1
-          grpc_health_check: {}
       connect_timeout: 5s
 
     # Gateway Metrics

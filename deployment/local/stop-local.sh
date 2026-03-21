@@ -27,4 +27,8 @@ for name_pid in "gateway-plugin:${GATEWAY_PID}" "envoy:${ENVOY_PID}"; do
 done
 
 rm -f "${PID_FILE}"
+
+# Clean up Envoy shared memory to prevent stale base_id conflicts on restart
+rm -f /dev/shm/envoy_shared_memory_* 2>/dev/null
+
 echo "Done."

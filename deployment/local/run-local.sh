@@ -82,34 +82,53 @@ echo ""
 
 # Start gateway-plugin
 echo "Starting gateway-plugin (gRPC :50052, metrics :8080)..."
-ROUTING_ALGORITHM="${ROUTING_ALGORITHM}" "${GATEWAY_BINARY}" \
+ROUTING_ALGORITHM="${ROUTING_ALGORITHM}" setsid --fork "${GATEWAY_BINARY}" \
     --standalone \
     --endpoints-config="${ENDPOINTS_CONFIG}" \
     --grpc-bind-address=":50052" \
     --metrics-bind-address=":8080" \
     > "${LOG_DIR}/gateway-plugin.log" 2>&1 &
 GATEWAY_PID=$!
+# setsid --fork creates a grandchild; wait briefly then find the actual PID
+sleep 0.5
+GATEWAY_PID=$(pgrep -n -f "gateway-plugins.*standalone" || echo "${GATEWAY_PID}")
 echo "  PID: ${GATEWAY_PID}"
 
-# Wait briefly for gateway to start
-sleep 1
-if ! kill -0 "${GATEWAY_PID}" 2>/dev/null; then
-    echo "ERROR: gateway-plugin failed to start. Check ${LOG_DIR}/gateway-plugin.log"
-    cat "${LOG_DIR}/gateway-plugin.log"
-    exit 1
-fi
+# Wait for gateway gRPC server to be ready (it can take several seconds to initialize)
+echo "  Waiting for gateway-plugin to be ready..."
+for i in $(seq 1 30); do
+    if ! kill -0 "${GATEWAY_PID}" 2>/dev/null; then
+        echo "ERROR: gateway-plugin failed to start. Check ${LOG_DIR}/gateway-plugin.log"
+        cat "${LOG_DIR}/gateway-plugin.log"
+        exit 1
+    fi
+    if ss -tlnp 2>/dev/null | grep -q ":50052"; then
+        echo "  gateway-plugin ready (${i}s)"
+        break
+    fi
+    if [ "${i}" -eq 30 ]; then
+        echo "ERROR: gateway-plugin gRPC server not ready after 30s. Check ${LOG_DIR}/gateway-plugin.log"
+        kill "${GATEWAY_PID}" 2>/dev/null || true
+        exit 1
+    fi
+    sleep 1
+done
 
 # Start Envoy
 echo "Starting Envoy (HTTP :10080, admin :9901)..."
-"${ENVOY_BINARY}" \
+setsid --fork "${ENVOY_BINARY}" \
     -c "${ENVOY_CONFIG}" \
+    --use-dynamic-base-id \
     --log-level warn \
     > "${LOG_DIR}/envoy.log" 2>&1 &
 ENVOY_PID=$!
+# setsid --fork creates a grandchild; wait briefly then find the actual PID
+sleep 0.5
+ENVOY_PID=$(pgrep -n envoy || echo "${ENVOY_PID}")
 echo "  PID: ${ENVOY_PID}"
 
 # Wait briefly for envoy to start
-sleep 1
+sleep 2
 if ! kill -0 "${ENVOY_PID}" 2>/dev/null; then
     echo "ERROR: Envoy failed to start. Check ${LOG_DIR}/envoy.log"
     cat "${LOG_DIR}/envoy.log"

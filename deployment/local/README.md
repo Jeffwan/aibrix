@@ -28,7 +28,24 @@ Envoy receives HTTP requests and forwards headers/body to the gateway-plugin via
 
 ## Prerequisites
 
-### 1. Build the gateway-plugin binary
+### 1. Install Go (1.22+)
+
+**Linux:**
+```bash
+wget https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+go version
+```
+
+**macOS:**
+```bash
+brew install go
+```
+
+### 2. Build the gateway-plugin binary
 
 ```bash
 make build-gateway-plugins-nozmq
@@ -36,19 +53,32 @@ make build-gateway-plugins-nozmq
 
 This produces `bin/gateway-plugins` - a pure Go binary (no ZMQ/CGO dependencies).
 
-### 2. Install Envoy
+### 3. Install Envoy
+
+**Linux (x86_64):**
+```bash
+ENVOY_VERSION=1.37.1
+wget -O envoy https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-x86_64
+chmod +x envoy
+sudo mv envoy /usr/local/bin/
+envoy --version
+```
+
+**Linux (aarch64):**
+```bash
+ENVOY_VERSION=1.37.1
+wget -O envoy https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-aarch_64
+chmod +x envoy
+sudo mv envoy /usr/local/bin/
+envoy --version
+```
 
 **macOS:**
 ```bash
 brew install envoy
 ```
 
-**Linux (Ubuntu/Debian):**
-```bash
-# See https://www.envoyproxy.io/docs/envoy/latest/start/install
-```
-
-### 3. Start your vLLM engine
+### 4. Start your vLLM engine
 
 ```bash
 # Example: run vLLM on port 8000
@@ -57,7 +87,7 @@ python -m vllm.entrypoints.openai.api_server \
     --port 8000
 ```
 
-### 4. (Optional) Redis
+### 5. (Optional) Redis
 
 Redis is **not required** in local mode. Without Redis, rate limiting is disabled but routing works normally.
 
@@ -67,6 +97,16 @@ redis-server
 ```
 
 ## Quick Start
+
+The `run-local.sh` and `stop-local.sh` scripts are **Linux-only** (they use `setsid`, `ss`, etc.). On macOS, start the two processes manually:
+
+```bash
+# macOS: start manually
+bin/gateway-plugins --standalone --endpoints-config=deployment/local/configs/endpoints.yaml &
+envoy -c deployment/local/configs/envoy.yaml --use-dynamic-base-id --log-level warn &
+```
+
+**Linux:**
 
 ```bash
 cd deployment/local
