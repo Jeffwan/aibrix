@@ -180,7 +180,9 @@ service ModelService {
 message Model {
   string id = 1;
   string name = 2;
-  string provider = 3;
+  // 3 reserved: previously top-level `provider`; now sourced from metadata.provider_name.
+  reserved 3;
+  reserved "provider";
   string icon_bg = 4;
   string icon_text = 5;
   string icon_text_color = 6;
@@ -195,19 +197,25 @@ message Model {
 }
 
 message ModelPricing {
-  string uncached_input = 1;
+  string uncached_input = 1;     // also covers embeddings (formerly per_tokens)
   string cached_input = 2;
   string output = 3;
-  string per_minute = 4;
-  string per_step = 5;
-  string per_ea = 6;
-  string per_tokens = 7;
+  string per_minute = 4;         // audio (e.g. Whisper)
+  // 5 reserved: previously `per_step` (unused). Re-add when diffusion pricing arrives.
+  reserved 5;
+  reserved "per_step";
+  string per_image = 6;          // formerly per_ea — image generation
+  // 7 reserved: previously `per_tokens` — collapsed into `uncached_input`.
+  reserved 7;
+  reserved "per_tokens";
 }
 
 message ModelMetadata {
   string state = 1;
   string created_on = 2;
-  string kind = 3;
+  // 3 reserved: previously `kind` (unused).
+  reserved 3;
+  reserved "kind";
   string provider_name = 4;
   string hugging_face = 5;
 }
@@ -228,6 +236,172 @@ message ListModelsResponse {
 }
 
 message GetModelRequest {
+  string id = 1;
+}
+
+// =============================================================================
+// Model Deployment Template Service
+//
+// TODO: This schema duplicates python/aibrix/aibrix/batch/template/schema.py
+// (ModelDeploymentTemplate, EngineSpec, ModelSourceSpec, AcceleratorSpec,
+// ParallelismSpec, EngineArgsSpec, QuantizationSpec, ProviderConfig). The
+// duplication is intentional for now — console owns the user-facing surface
+// while batch already has runtime usage. Once both sides settle, fold into a
+// single source-of-truth (likely a CRD generated from one schema).
+// =============================================================================
+
+service ModelDeploymentTemplateService {
+  rpc ListModelDeploymentTemplates(ListModelDeploymentTemplatesRequest) returns (ListModelDeploymentTemplatesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/model-deployment-templates"
+    };
+  }
+
+  rpc GetModelDeploymentTemplate(GetModelDeploymentTemplateRequest) returns (ModelDeploymentTemplate) {
+    option (google.api.http) = {
+      get: "/api/v1/model-deployment-templates/{id}"
+    };
+  }
+
+  rpc CreateModelDeploymentTemplate(CreateModelDeploymentTemplateRequest) returns (ModelDeploymentTemplate) {
+    option (google.api.http) = {
+      post: "/api/v1/model-deployment-templates"
+      body: "*"
+    };
+  }
+
+  rpc UpdateModelDeploymentTemplate(UpdateModelDeploymentTemplateRequest) returns (ModelDeploymentTemplate) {
+    option (google.api.http) = {
+      put: "/api/v1/model-deployment-templates/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteModelDeploymentTemplate(DeleteModelDeploymentTemplateRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/v1/model-deployment-templates/{id}"
+    };
+  }
+}
+
+message ModelDeploymentTemplate {
+  string id = 1;                          // server-assigned UUID
+  string name = 2;                        // logical name, e.g. "llama3-70b-prod"
+  string version = 3;                     // SemVer-ish, default "v1.0.0"
+  string status = 4;                      // "active" | "deprecated" | "draft"
+  string model_id = 5;                    // required — links template to a Model
+  ModelDeploymentTemplateSpec spec = 6;
+  string created_at = 7;
+  string updated_at = 8;
+}
+
+message ModelDeploymentTemplateSpec {
+  EngineSpec engine = 1;
+  ModelSourceSpec model_source = 2;
+  AcceleratorSpec accelerator = 3;
+  ParallelismSpec parallelism = 4;
+  EngineArgsSpec engine_args = 5;
+  QuantizationSpec quantization = 6;
+  ProviderConfig provider_config = 7;
+  repeated string supported_endpoints = 8;   // OpenAI endpoints, e.g. "/v1/chat/completions"
+  string deployment_mode = 9;                 // "dedicated" | "shared" | "external"
+}
+
+message EngineSpec {
+  string type = 1;                        // "vllm" | "sglang" | "trtllm" | "lmdeploy" | "mock"
+  string version = 2;
+  string image = 3;
+  string invocation = 4;                  // "http_server"
+  repeated string serve_args = 5;
+  string health_endpoint = 6;
+  int32 ready_timeout_seconds = 7;
+  string metrics_endpoint = 8;
+}
+
+message ModelSourceSpec {
+  string type = 1;                        // "huggingface" | "s3" | "local" | "registry"
+  string uri = 2;
+  string revision = 3;
+  string tokenizer_path = 4;
+  string chat_template_path = 5;
+  string auth_secret_ref = 6;
+}
+
+message AcceleratorSpec {
+  string type = 1;                        // free-form GPU SKU label, "cpu" treated specially
+  int32 count = 2;
+  string interconnect = 3;                // "nvlink" | "pcie" | "ib"
+  int32 vram_gb = 4;
+  string sku_hint = 5;                    // e.g. "aws/p5.48xlarge"
+}
+
+message ParallelismSpec {
+  int32 tp = 1;
+  int32 pp = 2;
+  int32 dp = 3;
+  int32 ep = 4;
+  int32 sp = 5;
+  int32 cp = 6;
+}
+
+message EngineArgsSpec {
+  optional int32 max_num_batched_tokens = 1;
+  optional int32 max_num_seqs = 2;
+  optional int32 max_model_len = 3;
+  optional double gpu_memory_utilization = 4;
+  optional int32 block_size = 5;
+  optional int32 swap_space = 6;
+  optional bool enable_prefix_caching = 7;
+  optional bool enable_chunked_prefill = 8;
+  optional string speculative_model = 9;
+  optional int32 num_speculative_tokens = 10;
+  // Lenient pass-through for engine-specific flags not modeled above.
+  // Values are stringified at the proto layer; callers parse as needed.
+  map<string, string> extra = 11;
+}
+
+message QuantizationSpec {
+  string weight = 1;                      // "fp8" | "awq" | "gptq" | "int8" | "bf16" | "fp16"
+  string kv_cache = 2;                    // "auto" | "fp8" | "fp8_e4m3" | "fp8_e5m2" | "int8"
+  string weights_artifact_uri = 3;
+}
+
+message ProviderConfig {
+  string type = 1;                        // "k8s" | "runpod" | "lambda_labs" | "ec2" | "gcp" | "external"
+  // Provider-specific keys (e.g. namespace, service_account, gpu_type_id).
+  map<string, string> extra = 2;
+}
+
+message ListModelDeploymentTemplatesRequest {
+  string model_id = 1;                    // optional filter
+  string status = 2;                      // optional filter
+}
+
+message ListModelDeploymentTemplatesResponse {
+  repeated ModelDeploymentTemplate templates = 1;
+}
+
+message GetModelDeploymentTemplateRequest {
+  string id = 1;
+}
+
+message CreateModelDeploymentTemplateRequest {
+  string name = 1;
+  string version = 2;                     // optional, defaults to "v1.0.0"
+  string status = 3;                      // optional, defaults to "active"
+  string model_id = 4;                    // required
+  ModelDeploymentTemplateSpec spec = 5;
+}
+
+message UpdateModelDeploymentTemplateRequest {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string status = 4;
+  ModelDeploymentTemplateSpec spec = 5;
+}
+
+message DeleteModelDeploymentTemplateRequest {
   string id = 1;
 }
 

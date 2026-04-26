@@ -36,6 +36,7 @@ type MemoryStore struct {
 	deployments []*pb.Deployment
 	jobs        []*pb.Job
 	models      []*pb.Model
+	templates   []*pb.ModelDeploymentTemplate
 	apiKeys     []*apiKeyEntry
 	secrets     []*secretEntry
 	quotas      []*pb.Quota
@@ -224,8 +225,12 @@ func (s *MemoryStore) ListModels(_ context.Context, search, category string) ([]
 		}
 		if search != "" {
 			q := strings.ToLower(search)
+			providerName := ""
+			if m.Metadata != nil {
+				providerName = m.Metadata.ProviderName
+			}
 			if !strings.Contains(strings.ToLower(m.Name), q) &&
-				!strings.Contains(strings.ToLower(m.Provider), q) {
+				!strings.Contains(strings.ToLower(providerName), q) {
 				continue
 			}
 		}
@@ -247,6 +252,137 @@ func (s *MemoryStore) GetModel(_ context.Context, id string) (*pb.Model, error) 
 		}
 	}
 	return nil, status.Errorf(codes.NotFound, "model %q not found", id)
+}
+
+// --- Model Deployment Templates ---
+
+// uuidV4 returns an RFC 4122 v4 UUID. Local helper to avoid an extra dependency.
+func uuidV4() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// rand.Read on crypto/rand only fails if the OS RNG is misconfigured;
+		// fall back to a timestamp-derived string so we never crash the server.
+		return fmt.Sprintf("uuid-%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+func (s *MemoryStore) ListModelDeploymentTemplates(_ context.Context, modelID, statusFilter string) ([]*pb.ModelDeploymentTemplate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*pb.ModelDeploymentTemplate, 0)
+	for _, t := range s.templates {
+		if modelID != "" && t.ModelId != modelID {
+			continue
+		}
+		if statusFilter != "" && !strings.EqualFold(t.Status, statusFilter) {
+			continue
+		}
+		result = append(result, t)
+	}
+	return result, nil
+}
+
+func (s *MemoryStore) GetModelDeploymentTemplate(_ context.Context, id string) (*pb.ModelDeploymentTemplate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, t := range s.templates {
+		if t.Id == id {
+			return t, nil
+		}
+	}
+	return nil, status.Errorf(codes.NotFound, "deployment template %q not found", id)
+}
+
+func (s *MemoryStore) CreateModelDeploymentTemplate(_ context.Context, req *pb.CreateModelDeploymentTemplateRequest) (*pb.ModelDeploymentTemplate, error) {
+	if req.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "name is required")
+	}
+	if req.GetModelId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "model_id is required")
+	}
+	if req.GetSpec() == nil {
+		return nil, status.Error(codes.InvalidArgument, "spec is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	version := req.GetVersion()
+	if version == "" {
+		version = "v1.0.0"
+	}
+	templateStatus := req.GetStatus()
+	if templateStatus == "" {
+		templateStatus = "active"
+	}
+
+	for _, t := range s.templates {
+		if t.ModelId == req.GetModelId() && t.Name == req.GetName() && t.Version == version {
+			return nil, status.Errorf(codes.AlreadyExists, "template %q@%q already exists for model %q", req.GetName(), version, req.GetModelId())
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	t := &pb.ModelDeploymentTemplate{
+		Id:        uuidV4(),
+		Name:      req.GetName(),
+		Version:   version,
+		Status:    templateStatus,
+		ModelId:   req.GetModelId(),
+		Spec:      req.GetSpec(),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	s.templates = append(s.templates, t)
+	return t, nil
+}
+
+func (s *MemoryStore) UpdateModelDeploymentTemplate(_ context.Context, req *pb.UpdateModelDeploymentTemplateRequest) (*pb.ModelDeploymentTemplate, error) {
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, t := range s.templates {
+		if t.Id != req.GetId() {
+			continue
+		}
+		if req.GetName() != "" {
+			t.Name = req.GetName()
+		}
+		if req.GetVersion() != "" {
+			t.Version = req.GetVersion()
+		}
+		if req.GetStatus() != "" {
+			t.Status = req.GetStatus()
+		}
+		if req.GetSpec() != nil {
+			t.Spec = req.GetSpec()
+		}
+		t.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		return t, nil
+	}
+	return nil, status.Errorf(codes.NotFound, "deployment template %q not found", req.GetId())
+}
+
+func (s *MemoryStore) DeleteModelDeploymentTemplate(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, t := range s.templates {
+		if t.Id == id {
+			s.templates = append(s.templates[:i], s.templates[i+1:]...)
+			return nil
+		}
+	}
+	return status.Errorf(codes.NotFound, "deployment template %q not found", id)
 }
 
 // --- API Keys ---

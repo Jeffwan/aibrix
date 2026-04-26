@@ -39,6 +39,13 @@ type Store interface {
 	ListModels(ctx context.Context, search, category string) ([]*pb.Model, error)
 	GetModel(ctx context.Context, id string) (*pb.Model, error)
 
+	// Model Deployment Templates
+	ListModelDeploymentTemplates(ctx context.Context, modelID, status string) ([]*pb.ModelDeploymentTemplate, error)
+	GetModelDeploymentTemplate(ctx context.Context, id string) (*pb.ModelDeploymentTemplate, error)
+	CreateModelDeploymentTemplate(ctx context.Context, req *pb.CreateModelDeploymentTemplateRequest) (*pb.ModelDeploymentTemplate, error)
+	UpdateModelDeploymentTemplate(ctx context.Context, req *pb.UpdateModelDeploymentTemplateRequest) (*pb.ModelDeploymentTemplate, error)
+	DeleteModelDeploymentTemplate(ctx context.Context, id string) error
+
 	// API Keys
 	ListAPIKeys(ctx context.Context) ([]*pb.APIKey, error)
 	CreateAPIKey(ctx context.Context, name string) (*pb.APIKey, string, error) // returns key + full secret
