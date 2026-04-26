@@ -188,17 +188,19 @@ func (s *MemoryStore) CreateJob(_ context.Context, req *pb.CreateJobRequest) (*p
 
 	now := time.Now()
 	j := &pb.Job{
-		Id:             s.genID(),
-		Name:           req.DisplayName,
-		InferenceId:    randomString(8),
-		Model:          req.Model,
-		ModelId:        strings.ToLower(strings.ReplaceAll(req.Model, " ", "-")),
-		InputDataset:   req.DatasetId,
-		InputDatasetId: req.DatasetId,
-		CreateDate:     now.Format("Jan 02, 2006"),
-		CreateTime:     now.Format("3:04 PM"),
-		Status:         "Validating",
-		FullPath:       fmt.Sprintf("accounts/aibrix/batchInference/%s", randomString(8)),
+		Id:                   s.genID(),
+		Name:                 req.DisplayName,
+		InferenceId:          randomString(8),
+		Model:                req.Model,
+		ModelId:              strings.ToLower(strings.ReplaceAll(req.Model, " ", "-")),
+		InputDataset:         req.DatasetId,
+		InputDatasetId:       req.DatasetId,
+		CreateDate:           now.Format("Jan 02, 2006"),
+		CreateTime:           now.Format("3:04 PM"),
+		Status:               "Validating",
+		FullPath:             fmt.Sprintf("accounts/aibrix/batchInference/%s", randomString(8)),
+		ModelTemplateName:    req.ModelTemplateName,
+		ModelTemplateVersion: req.ModelTemplateVersion,
 	}
 	s.jobs = append(s.jobs, j)
 	return j, nil

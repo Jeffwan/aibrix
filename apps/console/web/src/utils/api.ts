@@ -47,6 +47,8 @@ export interface CreateJobRequest {
   topP?: number;
   n?: number;
   quantization?: string;
+  modelTemplateName?: string;
+  modelTemplateVersion?: string;
 }
 
 export interface CreateDeploymentRequest {

@@ -467,8 +467,12 @@ type Job struct {
 	CreatedBy      string                 `protobuf:"bytes,10,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	Status         string                 `protobuf:"bytes,11,opt,name=status,proto3" json:"status,omitempty"` // "Completed", "Validating", "Failed"
 	FullPath       string                 `protobuf:"bytes,12,opt,name=full_path,json=fullPath,proto3" json:"full_path,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Resolved deployment-template binding. Populated from the user's
+	// template selection in the create-job flow; empty for legacy jobs.
+	ModelTemplateName    string `protobuf:"bytes,13,opt,name=model_template_name,json=modelTemplateName,proto3" json:"model_template_name,omitempty"`
+	ModelTemplateVersion string `protobuf:"bytes,14,opt,name=model_template_version,json=modelTemplateVersion,proto3" json:"model_template_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Job) Reset() {
@@ -581,6 +585,20 @@ func (x *Job) GetStatus() string {
 func (x *Job) GetFullPath() string {
 	if x != nil {
 		return x.FullPath
+	}
+	return ""
+}
+
+func (x *Job) GetModelTemplateName() string {
+	if x != nil {
+		return x.ModelTemplateName
+	}
+	return ""
+}
+
+func (x *Job) GetModelTemplateVersion() string {
+	if x != nil {
+		return x.ModelTemplateVersion
 	}
 	return ""
 }
@@ -726,17 +744,22 @@ func (x *GetJobRequest) GetId() string {
 }
 
 type CreateJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Model         string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
-	DatasetId     string                 `protobuf:"bytes,2,opt,name=dataset_id,json=datasetId,proto3" json:"dataset_id,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	MaxTokens     *int32                 `protobuf:"varint,4,opt,name=max_tokens,json=maxTokens,proto3,oneof" json:"max_tokens,omitempty"`
-	Temperature   *float64               `protobuf:"fixed64,5,opt,name=temperature,proto3,oneof" json:"temperature,omitempty"`
-	TopP          *float64               `protobuf:"fixed64,6,opt,name=top_p,json=topP,proto3,oneof" json:"top_p,omitempty"`
-	N             *int32                 `protobuf:"varint,7,opt,name=n,proto3,oneof" json:"n,omitempty"`
-	Quantization  string                 `protobuf:"bytes,8,opt,name=quantization,proto3" json:"quantization,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Model        string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	DatasetId    string                 `protobuf:"bytes,2,opt,name=dataset_id,json=datasetId,proto3" json:"dataset_id,omitempty"`
+	DisplayName  string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	MaxTokens    *int32                 `protobuf:"varint,4,opt,name=max_tokens,json=maxTokens,proto3,oneof" json:"max_tokens,omitempty"`
+	Temperature  *float64               `protobuf:"fixed64,5,opt,name=temperature,proto3,oneof" json:"temperature,omitempty"`
+	TopP         *float64               `protobuf:"fixed64,6,opt,name=top_p,json=topP,proto3,oneof" json:"top_p,omitempty"`
+	N            *int32                 `protobuf:"varint,7,opt,name=n,proto3,oneof" json:"n,omitempty"`
+	Quantization string                 `protobuf:"bytes,8,opt,name=quantization,proto3" json:"quantization,omitempty"`
+	// ModelDeploymentTemplate binding. Required for new jobs created via
+	// the console UI; the SDK path remains free to omit them and rely on
+	// metadata-service-side resolution.
+	ModelTemplateName    string `protobuf:"bytes,9,opt,name=model_template_name,json=modelTemplateName,proto3" json:"model_template_name,omitempty"`
+	ModelTemplateVersion string `protobuf:"bytes,10,opt,name=model_template_version,json=modelTemplateVersion,proto3" json:"model_template_version,omitempty"` // optional; "" = latest active
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *CreateJobRequest) Reset() {
@@ -821,6 +844,20 @@ func (x *CreateJobRequest) GetN() int32 {
 func (x *CreateJobRequest) GetQuantization() string {
 	if x != nil {
 		return x.Quantization
+	}
+	return ""
+}
+
+func (x *CreateJobRequest) GetModelTemplateName() string {
+	if x != nil {
+		return x.ModelTemplateName
+	}
+	return ""
+}
+
+func (x *CreateJobRequest) GetModelTemplateVersion() string {
+	if x != nil {
+		return x.ModelTemplateVersion
 	}
 	return ""
 }
@@ -3151,7 +3188,7 @@ const file_console_v1_console_proto_rawDesc = "" +
 	"\x11enable_multi_lora\x18\n" +
 	" \x01(\bR\x0fenableMultiLora\")\n" +
 	"\x17DeleteDeploymentRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xe2\x02\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xc8\x03\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
@@ -3168,14 +3205,16 @@ const file_console_v1_console_proto_rawDesc = "" +
 	"created_by\x18\n" +
 	" \x01(\tR\tcreatedBy\x12\x16\n" +
 	"\x06status\x18\v \x01(\tR\x06status\x12\x1b\n" +
-	"\tfull_path\x18\f \x01(\tR\bfullPath\"A\n" +
+	"\tfull_path\x18\f \x01(\tR\bfullPath\x12.\n" +
+	"\x13model_template_name\x18\r \x01(\tR\x11modelTemplateName\x124\n" +
+	"\x16model_template_version\x18\x0e \x01(\tR\x14modelTemplateVersion\"A\n" +
 	"\x0fListJobsRequest\x12\x16\n" +
 	"\x06search\x18\x01 \x01(\tR\x06search\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\"7\n" +
 	"\x10ListJobsResponse\x12#\n" +
 	"\x04jobs\x18\x01 \x03(\v2\x0f.console.v1.JobR\x04jobs\"\x1f\n" +
 	"\rGetJobRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xb5\x02\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x9b\x03\n" +
 	"\x10CreateJobRequest\x12\x14\n" +
 	"\x05model\x18\x01 \x01(\tR\x05model\x12\x1d\n" +
 	"\n" +
@@ -3186,7 +3225,10 @@ const file_console_v1_console_proto_rawDesc = "" +
 	"\vtemperature\x18\x05 \x01(\x01H\x01R\vtemperature\x88\x01\x01\x12\x18\n" +
 	"\x05top_p\x18\x06 \x01(\x01H\x02R\x04topP\x88\x01\x01\x12\x11\n" +
 	"\x01n\x18\a \x01(\x05H\x03R\x01n\x88\x01\x01\x12\"\n" +
-	"\fquantization\x18\b \x01(\tR\fquantizationB\r\n" +
+	"\fquantization\x18\b \x01(\tR\fquantization\x12.\n" +
+	"\x13model_template_name\x18\t \x01(\tR\x11modelTemplateName\x124\n" +
+	"\x16model_template_version\x18\n" +
+	" \x01(\tR\x14modelTemplateVersionB\r\n" +
 	"\v_max_tokensB\x0e\n" +
 	"\f_temperatureB\b\n" +
 	"\x06_top_pB\x04\n" +

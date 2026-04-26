@@ -133,6 +133,10 @@ message Job {
   string created_by = 10;
   string status = 11; // "Completed", "Validating", "Failed"
   string full_path = 12;
+  // Resolved deployment-template binding. Populated from the user's
+  // template selection in the create-job flow; empty for legacy jobs.
+  string model_template_name = 13;
+  string model_template_version = 14;
 }
 
 message ListJobsRequest {
@@ -157,6 +161,11 @@ message CreateJobRequest {
   optional double top_p = 6;
   optional int32 n = 7;
   string quantization = 8;
+  // ModelDeploymentTemplate binding. Required for new jobs created via
+  // the console UI; the SDK path remains free to omit them and rely on
+  // metadata-service-side resolution.
+  string model_template_name = 9;
+  string model_template_version = 10;  // optional; "" = latest active
 }
 
 // =============================================================================

@@ -11,6 +11,8 @@ export interface Job {
   createdBy: string;
   status: 'Completed' | 'Validating' | 'Failed';
   fullPath: string;
+  modelTemplateName?: string;
+  modelTemplateVersion?: string;
 }
 
 export interface Deployment {
