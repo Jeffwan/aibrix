@@ -245,6 +245,71 @@ message GetModelRequest {
 //     model_template + model_template_version in extra_body.aibrix). Server
 //     picks "latest active" when version is empty.
 //
+// -----------------------------------------------------------------------------
+// Batch SDK contract (forward reference — authoritative)
+// -----------------------------------------------------------------------------
+// Batch jobs reference templates and profiles via OpenAI's extra_body. The
+// Python metadata service (python/aibrix/aibrix/metadata/api/v1/batch.py)
+// currently uses a flat `overrides` shape; this block is the authoritative
+// shape it MUST migrate to. Locked in here so future implementers don't
+// reinvent or regress to the flat form.
+//
+//   client.batches.create(
+//       input_file_id="file-...",
+//       endpoint="/v1/chat/completions",
+//       completion_window="24h",
+//       extra_body={
+//           "aibrix": {
+//               "model_template": {
+//                   "name":    "llama3-70b-prod",   # required
+//                   "version": "v1.3.0",            # optional; "" = latest active
+//                   "overrides": {                  # optional, allowlisted patches
+//                       "engine_args": {"max_num_seqs": "512"}
+//                   }
+//               },
+//               "profile": {
+//                   "name": "prod-24h",             # required
+//                   "overrides": {                  # optional
+//                       "scheduling": {"max_concurrency": 32}
+//                   }
+//               }
+//           }
+//       }
+//   )
+//
+// Why nested rather than flat (model_template_overrides / profile_overrides):
+//   - Each reference owns its own overrides namespace, so adding a third
+//     reference type (e.g. "quota") later cannot collide on field names.
+//   - Reads self-evidently — overrides on "what" is decided by structure,
+//     not by a prefix the reader has to mentally parse.
+//   - Forward-compatible: any future per-template extension (additional
+//     override targets, expanded allowlist) lives under model_template.*
+//     and cannot bleed into profile.*.
+//
+// Inline `model_template_spec` is intentionally NOT supported. Templates
+// exist precisely to be the curated security/cost gate; allowing inline
+// would let users bypass image / GPU SKU / namespace controls and would
+// shatter audit/cost-attribution by template name. If we ever need a true
+// one-off escape hatch, add it as an explicit, admin-gated alternative
+// rather than as a sibling of model_template.
+//
+// Resolution rules (locked):
+//   - model_template.name is required when extra_body.aibrix.model_template
+//     is present.
+//   - model_template.version: empty string -> latest active version of that
+//     name; explicit value -> exact match (404 if missing).
+//   - model_template.overrides is optional and ALLOWLISTED. Allowlist today:
+//     {engine_args}. Anything else is rejected with 400. New keys are added
+//     here only after a proven need; the proto comment is the source of
+//     truth — implementations MUST reject unknown keys, not silently ignore.
+//   - profile.name is required when extra_body.aibrix.profile is present.
+//   - profile.overrides is optional and ALLOWLISTED. Allowlist today:
+//     {scheduling}. Same rejection rule as above.
+//   - When extra_body.aibrix is omitted entirely, the metadata service uses
+//     its configured default profile and rejects the request if no template
+//     can be inferred from the request `model` field.
+// -----------------------------------------------------------------------------
+//
 // TODO: This schema duplicates python/aibrix/aibrix/batch/template/schema.py
 // (ModelDeploymentTemplate, EngineSpec, ModelSourceSpec, AcceleratorSpec,
 // ParallelismSpec, EngineArgsSpec, QuantizationSpec, ProviderConfig). The
