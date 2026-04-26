@@ -37,6 +37,29 @@ const COMMON_ENDPOINTS = [
   '/v1/images/generations',
 ];
 
+// Curated list of well-known engine_args knobs surfaced as labeled inputs.
+// The data model is still a flat string map; this is purely a UI affordance.
+// Inputs not in this list are presented as a free-form key/value editor.
+type KnobKind = 'int' | 'float' | 'bool' | 'string';
+interface KnownKnob {
+  key: string;
+  label: string;
+  kind: KnobKind;
+}
+const KNOWN_ENGINE_ARGS: KnownKnob[] = [
+  { key: 'max_num_batched_tokens', label: 'max_num_batched_tokens', kind: 'int' },
+  { key: 'max_num_seqs', label: 'max_num_seqs', kind: 'int' },
+  { key: 'max_model_len', label: 'max_model_len', kind: 'int' },
+  { key: 'gpu_memory_utilization', label: 'gpu_memory_utilization', kind: 'float' },
+  { key: 'block_size', label: 'block_size', kind: 'int' },
+  { key: 'swap_space', label: 'swap_space (GB)', kind: 'int' },
+  { key: 'enable_prefix_caching', label: 'enable_prefix_caching', kind: 'bool' },
+  { key: 'enable_chunked_prefill', label: 'enable_chunked_prefill', kind: 'bool' },
+  { key: 'speculative_model', label: 'speculative_model', kind: 'string' },
+  { key: 'num_speculative_tokens', label: 'num_speculative_tokens', kind: 'int' },
+];
+const KNOWN_KEYS = new Set(KNOWN_ENGINE_ARGS.map((k) => k.key));
+
 function emptySpec(): ModelDeploymentTemplateSpec {
   return {
     engine: { type: 'vllm', version: '', image: '', invocation: 'http_server', healthEndpoint: '/health' },
@@ -426,86 +449,12 @@ export function CreateModelDeploymentTemplate({
           ))}
         </Section>
 
-        {/* Engine args */}
-        <Section title="Engine args">
-          <Field label="max_num_batched_tokens">
-            <input
-              type="number"
-              value={spec.engineArgs?.maxNumBatchedTokens ?? ''}
-              onChange={(e) => updateSpec('engineArgs', { maxNumBatchedTokens: e.target.value === '' ? undefined : Number(e.target.value) })}
-              className={inputCls}
-            />
-          </Field>
-          <Field label="max_num_seqs">
-            <input
-              type="number"
-              value={spec.engineArgs?.maxNumSeqs ?? ''}
-              onChange={(e) => updateSpec('engineArgs', { maxNumSeqs: e.target.value === '' ? undefined : Number(e.target.value) })}
-              className={inputCls}
-            />
-          </Field>
-          <Field label="max_model_len">
-            <input
-              type="number"
-              value={spec.engineArgs?.maxModelLen ?? ''}
-              onChange={(e) => updateSpec('engineArgs', { maxModelLen: e.target.value === '' ? undefined : Number(e.target.value) })}
-              className={inputCls}
-            />
-          </Field>
-          <Field label="gpu_memory_utilization">
-            <input
-              type="number"
-              step="0.01"
-              min={0}
-              max={1}
-              value={spec.engineArgs?.gpuMemoryUtilization ?? ''}
-              onChange={(e) => updateSpec('engineArgs', { gpuMemoryUtilization: e.target.value === '' ? undefined : Number(e.target.value) })}
-              className={inputCls}
-            />
-          </Field>
-          <Field label="enable_prefix_caching">
-            <select
-              value={
-                spec.engineArgs?.enablePrefixCaching === undefined
-                  ? ''
-                  : spec.engineArgs.enablePrefixCaching
-                    ? 'true'
-                    : 'false'
-              }
-              onChange={(e) =>
-                updateSpec('engineArgs', {
-                  enablePrefixCaching: e.target.value === '' ? undefined : e.target.value === 'true',
-                })
-              }
-              className={inputCls}
-            >
-              <option value="">—</option>
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          </Field>
-          <Field label="enable_chunked_prefill">
-            <select
-              value={
-                spec.engineArgs?.enableChunkedPrefill === undefined
-                  ? ''
-                  : spec.engineArgs.enableChunkedPrefill
-                    ? 'true'
-                    : 'false'
-              }
-              onChange={(e) =>
-                updateSpec('engineArgs', {
-                  enableChunkedPrefill: e.target.value === '' ? undefined : e.target.value === 'true',
-                })
-              }
-              className={inputCls}
-            >
-              <option value="">—</option>
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          </Field>
-        </Section>
+        {/* Engine args (free-form key/value, with curated knobs surfaced) */}
+        <EngineArgsSection
+          args={spec.engineArgs ?? {}}
+          onChange={(next) => setSpec((prev) => ({ ...prev, engineArgs: next }))}
+        />
+
 
         {/* Quantization */}
         <Section title="Quantization">
@@ -645,6 +594,128 @@ function Field({
     <div className={wide ? 'sm:col-span-2 lg:col-span-3' : ''}>
       <label className="block text-xs text-gray-600 mb-1">{label}</label>
       {children}
+    </div>
+  );
+}
+
+function EngineArgsSection({
+  args,
+  onChange,
+}: {
+  args: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+}) {
+  const setKey = (key: string, value: string | undefined) => {
+    const next = { ...args };
+    if (value === undefined || value === '') {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    onChange(next);
+  };
+
+  const renameKey = (oldKey: string, newKey: string) => {
+    if (newKey === oldKey) return;
+    const next = { ...args };
+    if (oldKey in next) {
+      const v = next[oldKey];
+      delete next[oldKey];
+      if (newKey) next[newKey] = v;
+    }
+    onChange(next);
+  };
+
+  const customEntries = Object.entries(args).filter(([k]) => !KNOWN_KEYS.has(k));
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <div className="mb-4">
+        <h3 className="text-sm">Engine args</h3>
+        <p className="text-xs text-gray-500 mt-1">
+          Key/value flags forwarded to the engine. Common knobs are listed below; use Custom for engine-specific flags.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {KNOWN_ENGINE_ARGS.map((knob) => {
+          const raw = args[knob.key];
+          if (knob.kind === 'bool') {
+            const value = raw === undefined ? '' : raw === 'true' ? 'true' : 'false';
+            return (
+              <Field key={knob.key} label={knob.label}>
+                <select
+                  value={value}
+                  onChange={(e) => setKey(knob.key, e.target.value === '' ? undefined : e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">—</option>
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              </Field>
+            );
+          }
+          const inputType = knob.kind === 'int' || knob.kind === 'float' ? 'number' : 'text';
+          const step = knob.kind === 'float' ? '0.01' : undefined;
+          return (
+            <Field key={knob.key} label={knob.label}>
+              <input
+                type={inputType}
+                step={step}
+                value={raw ?? ''}
+                onChange={(e) => setKey(knob.key, e.target.value === '' ? undefined : e.target.value)}
+                className={inputCls}
+              />
+            </Field>
+          );
+        })}
+      </div>
+
+      <div className="border-t border-gray-100 pt-4">
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-xs text-gray-700">Custom flags</h4>
+          <button
+            type="button"
+            onClick={() => onChange({ ...args, '': '' })}
+            className="text-xs text-teal-600 hover:text-teal-700"
+          >
+            + Add
+          </button>
+        </div>
+        {customEntries.length === 0 ? (
+          <p className="text-xs text-gray-400">No custom flags set.</p>
+        ) : (
+          <div className="space-y-2">
+            {customEntries.map(([k, v], idx) => (
+              <div key={`${k}-${idx}`} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={k}
+                  placeholder="flag_name"
+                  onChange={(e) => renameKey(k, e.target.value)}
+                  className={`${inputCls} flex-1 font-mono`}
+                />
+                <input
+                  type="text"
+                  value={v}
+                  placeholder="value"
+                  onChange={(e) => setKey(k, e.target.value)}
+                  className={`${inputCls} flex-1 font-mono`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setKey(k, undefined)}
+                  className="px-2 py-1 text-xs text-gray-400 hover:text-red-600"
+                  aria-label="Remove"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

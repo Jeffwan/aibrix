@@ -178,10 +178,6 @@ func (s *MemoryStore) loadDemoModels() {
 func (s *MemoryStore) loadDemoModelDeploymentTemplates() {
 	now := "2026-04-26T00:00:00Z"
 
-	pi32 := func(v int32) *int32 { return &v }
-	pf64 := func(v float64) *float64 { return &v }
-	pbool := func(v bool) *bool { return &v }
-
 	s.templates = []*pb.ModelDeploymentTemplate{
 		{
 			Id:        "tpl-llama3-70b-prod",
@@ -215,13 +211,13 @@ func (s *MemoryStore) loadDemoModelDeploymentTemplates() {
 					SkuHint:      "aws/p5.48xlarge",
 				},
 				Parallelism: &pb.ParallelismSpec{Tp: 4, Pp: 1, Dp: 1},
-				EngineArgs: &pb.EngineArgsSpec{
-					MaxNumBatchedTokens:   pi32(32768),
-					MaxNumSeqs:            pi32(256),
-					MaxModelLen:           pi32(32768),
-					GpuMemoryUtilization:  pf64(0.92),
-					EnablePrefixCaching:   pbool(true),
-					EnableChunkedPrefill:  pbool(true),
+				EngineArgs: map[string]string{
+					"max_num_batched_tokens":  "32768",
+					"max_num_seqs":            "256",
+					"max_model_len":           "32768",
+					"gpu_memory_utilization":  "0.92",
+					"enable_prefix_caching":   "true",
+					"enable_chunked_prefill":  "true",
 				},
 				Quantization: &pb.QuantizationSpec{Weight: "fp8", KvCache: "fp8_e4m3"},
 				ProviderConfig: &pb.ProviderConfig{
@@ -256,12 +252,12 @@ func (s *MemoryStore) loadDemoModelDeploymentTemplates() {
 				},
 				Accelerator: &pb.AcceleratorSpec{Type: "L40S", Count: 4, VramGb: 48},
 				Parallelism: &pb.ParallelismSpec{Tp: 4, Pp: 1, Dp: 1},
-				EngineArgs: &pb.EngineArgsSpec{
-					MaxNumBatchedTokens:  pi32(8192),
-					MaxNumSeqs:           pi32(64),
-					MaxModelLen:          pi32(8192),
-					GpuMemoryUtilization: pf64(0.90),
-					EnablePrefixCaching:  pbool(true),
+				EngineArgs: map[string]string{
+					"max_num_batched_tokens": "8192",
+					"max_num_seqs":           "64",
+					"max_model_len":          "8192",
+					"gpu_memory_utilization": "0.90",
+					"enable_prefix_caching":  "true",
 				},
 				Quantization: &pb.QuantizationSpec{Weight: "bf16"},
 				ProviderConfig: &pb.ProviderConfig{
@@ -295,11 +291,11 @@ func (s *MemoryStore) loadDemoModelDeploymentTemplates() {
 				},
 				Accelerator: &pb.AcceleratorSpec{Type: "H200", Count: 8, Interconnect: "nvlink", VramGb: 141},
 				Parallelism: &pb.ParallelismSpec{Tp: 8, Pp: 1, Dp: 1},
-				EngineArgs: &pb.EngineArgsSpec{
-					MaxNumSeqs:           pi32(128),
-					MaxModelLen:          pi32(128000),
-					GpuMemoryUtilization: pf64(0.93),
-					EnablePrefixCaching:  pbool(true),
+				EngineArgs: map[string]string{
+					"max_num_seqs":           "128",
+					"max_model_len":          "128000",
+					"gpu_memory_utilization": "0.93",
+					"enable_prefix_caching":  "true",
 				},
 				Quantization: &pb.QuantizationSpec{Weight: "fp8"},
 				ProviderConfig: &pb.ProviderConfig{

@@ -325,7 +325,18 @@ message ModelDeploymentTemplateSpec {
   ModelSourceSpec model_source = 2;
   AcceleratorSpec accelerator = 3;
   ParallelismSpec parallelism = 4;
-  EngineArgsSpec engine_args = 5;
+  // Free-form key/value engine knobs. Keys map directly to engine flags
+  // (e.g. "max_num_seqs", "gpu_memory_utilization"); values are strings so
+  // the wire format stays engine-agnostic — the renderer parses each value
+  // when materializing the engine command line.
+  //
+  // Why a map rather than typed fields: vLLM / SGLang / TRT-LLM expose
+  // dozens of flags that change every release; modeling each as its own
+  // proto field turns the schema into a maintenance treadmill and forces
+  // a superset that is meaningless for half of the engines. The console UI
+  // ships a curated list of "known knobs" client-side (autocomplete + typed
+  // inputs) decoupled from the wire format.
+  map<string, string> engine_args = 5;
   QuantizationSpec quantization = 6;
   ProviderConfig provider_config = 7;
   repeated string supported_endpoints = 8;   // OpenAI endpoints, e.g. "/v1/chat/completions"
@@ -367,22 +378,6 @@ message ParallelismSpec {
   int32 ep = 4;
   int32 sp = 5;
   int32 cp = 6;
-}
-
-message EngineArgsSpec {
-  optional int32 max_num_batched_tokens = 1;
-  optional int32 max_num_seqs = 2;
-  optional int32 max_model_len = 3;
-  optional double gpu_memory_utilization = 4;
-  optional int32 block_size = 5;
-  optional int32 swap_space = 6;
-  optional bool enable_prefix_caching = 7;
-  optional bool enable_chunked_prefill = 8;
-  optional string speculative_model = 9;
-  optional int32 num_speculative_tokens = 10;
-  // Lenient pass-through for engine-specific flags not modeled above.
-  // Values are stringified at the proto layer; callers parse as needed.
-  map<string, string> extra = 11;
 }
 
 message QuantizationSpec {

@@ -105,20 +105,6 @@ export interface ParallelismSpec {
   cp?: number;
 }
 
-export interface EngineArgsSpec {
-  maxNumBatchedTokens?: number;
-  maxNumSeqs?: number;
-  maxModelLen?: number;
-  gpuMemoryUtilization?: number;
-  blockSize?: number;
-  swapSpace?: number;
-  enablePrefixCaching?: boolean;
-  enableChunkedPrefill?: boolean;
-  speculativeModel?: string;
-  numSpeculativeTokens?: number;
-  extra?: Record<string, string>;
-}
-
 export interface QuantizationSpec {
   weight?: string;
   kvCache?: string;
@@ -135,7 +121,9 @@ export interface ModelDeploymentTemplateSpec {
   modelSource?: ModelSourceSpec;
   accelerator?: AcceleratorSpec;
   parallelism?: ParallelismSpec;
-  engineArgs?: EngineArgsSpec;
+  // engineArgs is a free-form key/value map. Common knobs are surfaced by
+  // the form as curated inputs; everything else flows through directly.
+  engineArgs?: Record<string, string>;
   quantization?: QuantizationSpec;
   providerConfig?: ProviderConfig;
   supportedEndpoints?: string[];
