@@ -430,11 +430,11 @@ func scanModelRow(row *sql.Row) (*pb.Model, error) {
 // only in the memory store. When this lands, add a `model_deployment_templates`
 // table and JSON-encode the spec column.
 
-func (s *MySQLStore) ListModelDeploymentTemplates(_ context.Context, _ string, _ string) ([]*pb.ModelDeploymentTemplate, error) {
+func (s *MySQLStore) ListModelDeploymentTemplates(_ context.Context, _ string, _ string, _ string) ([]*pb.ModelDeploymentTemplate, error) {
 	return nil, status.Error(codes.Unimplemented, "model deployment templates not yet supported by mysql store")
 }
 
-func (s *MySQLStore) GetModelDeploymentTemplate(_ context.Context, _ string) (*pb.ModelDeploymentTemplate, error) {
+func (s *MySQLStore) GetModelDeploymentTemplate(_ context.Context, _ string, _ string) (*pb.ModelDeploymentTemplate, error) {
 	return nil, status.Error(codes.Unimplemented, "model deployment templates not yet supported by mysql store")
 }
 
@@ -446,8 +446,12 @@ func (s *MySQLStore) UpdateModelDeploymentTemplate(_ context.Context, _ *pb.Upda
 	return nil, status.Error(codes.Unimplemented, "model deployment templates not yet supported by mysql store")
 }
 
-func (s *MySQLStore) DeleteModelDeploymentTemplate(_ context.Context, _ string) error {
+func (s *MySQLStore) DeleteModelDeploymentTemplate(_ context.Context, _ string, _ string) error {
 	return status.Error(codes.Unimplemented, "model deployment templates not yet supported by mysql store")
+}
+
+func (s *MySQLStore) ResolveModelDeploymentTemplate(_ context.Context, _ string, _ string, _ string) (*pb.ModelDeploymentTemplate, error) {
+	return nil, status.Error(codes.Unimplemented, "model deployment templates not yet supported by mysql store")
 }
 
 // unmarshalModelJSON unmarshals the JSON columns into the model's sub-messages.

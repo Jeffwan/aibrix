@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -269,7 +270,7 @@ func uuidV4() string {
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-func (s *MemoryStore) ListModelDeploymentTemplates(_ context.Context, modelID, statusFilter string) ([]*pb.ModelDeploymentTemplate, error) {
+func (s *MemoryStore) ListModelDeploymentTemplates(_ context.Context, modelID, statusFilter, name string) ([]*pb.ModelDeploymentTemplate, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -281,21 +282,24 @@ func (s *MemoryStore) ListModelDeploymentTemplates(_ context.Context, modelID, s
 		if statusFilter != "" && !strings.EqualFold(t.Status, statusFilter) {
 			continue
 		}
+		if name != "" && t.Name != name {
+			continue
+		}
 		result = append(result, t)
 	}
 	return result, nil
 }
 
-func (s *MemoryStore) GetModelDeploymentTemplate(_ context.Context, id string) (*pb.ModelDeploymentTemplate, error) {
+func (s *MemoryStore) GetModelDeploymentTemplate(_ context.Context, modelID, id string) (*pb.ModelDeploymentTemplate, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	for _, t := range s.templates {
-		if t.Id == id {
+		if t.Id == id && t.ModelId == modelID {
 			return t, nil
 		}
 	}
-	return nil, status.Errorf(codes.NotFound, "deployment template %q not found", id)
+	return nil, status.Errorf(codes.NotFound, "deployment template %q not found under model %q", id, modelID)
 }
 
 func (s *MemoryStore) CreateModelDeploymentTemplate(_ context.Context, req *pb.CreateModelDeploymentTemplateRequest) (*pb.ModelDeploymentTemplate, error) {
@@ -346,12 +350,15 @@ func (s *MemoryStore) UpdateModelDeploymentTemplate(_ context.Context, req *pb.U
 	if req.GetId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "id is required")
 	}
+	if req.GetModelId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "model_id is required")
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, t := range s.templates {
-		if t.Id != req.GetId() {
+		if t.Id != req.GetId() || t.ModelId != req.GetModelId() {
 			continue
 		}
 		if req.GetName() != "" {
@@ -369,20 +376,98 @@ func (s *MemoryStore) UpdateModelDeploymentTemplate(_ context.Context, req *pb.U
 		t.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		return t, nil
 	}
-	return nil, status.Errorf(codes.NotFound, "deployment template %q not found", req.GetId())
+	return nil, status.Errorf(codes.NotFound, "deployment template %q not found under model %q", req.GetId(), req.GetModelId())
 }
 
-func (s *MemoryStore) DeleteModelDeploymentTemplate(_ context.Context, id string) error {
+func (s *MemoryStore) DeleteModelDeploymentTemplate(_ context.Context, modelID, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for i, t := range s.templates {
-		if t.Id == id {
+		if t.Id == id && t.ModelId == modelID {
 			s.templates = append(s.templates[:i], s.templates[i+1:]...)
 			return nil
 		}
 	}
-	return status.Errorf(codes.NotFound, "deployment template %q not found", id)
+	return status.Errorf(codes.NotFound, "deployment template %q not found under model %q", id, modelID)
+}
+
+// compareVersions returns negative / 0 / positive for a vs b using a SemVer-ish
+// rule: split on ".", strip a leading "v", compare numerically when both sides
+// parse as ints, lexically otherwise. Good enough for "v1.3.0" vs "v0.2.0";
+// pre-release tags are not modeled.
+func compareVersions(a, b string) int {
+	norm := func(s string) []string {
+		s = strings.TrimPrefix(strings.TrimPrefix(s, "v"), "V")
+		return strings.Split(s, ".")
+	}
+	ap, bp := norm(a), norm(b)
+	for i := 0; i < len(ap) || i < len(bp); i++ {
+		var av, bv string
+		if i < len(ap) {
+			av = ap[i]
+		}
+		if i < len(bp) {
+			bv = bp[i]
+		}
+		ai, aerr := strconv.Atoi(av)
+		bi, berr := strconv.Atoi(bv)
+		if aerr == nil && berr == nil {
+			if ai != bi {
+				return ai - bi
+			}
+			continue
+		}
+		if av != bv {
+			if av < bv {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+func (s *MemoryStore) ResolveModelDeploymentTemplate(_ context.Context, modelID, name, version string) (*pb.ModelDeploymentTemplate, error) {
+	if name == "" {
+		return nil, status.Error(codes.InvalidArgument, "name is required")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if version != "" {
+		for _, t := range s.templates {
+			if t.ModelId == modelID && t.Name == name && t.Version == version {
+				return t, nil
+			}
+		}
+		return nil, status.Errorf(codes.NotFound, "no template %q@%q under model %q", name, version, modelID)
+	}
+
+	var (
+		latest    *pb.ModelDeploymentTemplate
+		anyByName bool
+	)
+	for _, t := range s.templates {
+		if t.ModelId != modelID || t.Name != name {
+			continue
+		}
+		anyByName = true
+		if !strings.EqualFold(t.Status, "active") {
+			continue
+		}
+		if latest == nil || compareVersions(t.Version, latest.Version) > 0 {
+			latest = t
+		}
+	}
+	if latest != nil {
+		return latest, nil
+	}
+	if anyByName {
+		return nil, status.Errorf(codes.FailedPrecondition, "template %q under model %q has no active version", name, modelID)
+	}
+	return nil, status.Errorf(codes.NotFound, "no template %q under model %q", name, modelID)
 }
 
 // --- API Keys ---

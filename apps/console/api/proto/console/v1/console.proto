@@ -242,6 +242,21 @@ message GetModelRequest {
 // =============================================================================
 // Model Deployment Template Service
 //
+// Identity model:
+//   - Each template has a server-assigned UUID `id` (stable, addressable).
+//   - The (model_id, name, version) tuple is unique and is the human-friendly
+//     handle used by clients that pin a known template. Multiple versions of
+//     the same `name` may coexist; `status` selects which is active.
+//   - "Latest active" for a (model_id, name) pair = highest SemVer-ish version
+//     with status == "active".
+//
+// Resolve vs Get:
+//   - Get is by UUID — used by the console UI after navigating from a list.
+//   - ResolveModelDeploymentTemplate is by (name, version?) — used by clients
+//     that pin templates from outside the UI (e.g. batch SDK callers passing
+//     model_template + model_template_version in extra_body.aibrix). Server
+//     picks "latest active" when version is empty.
+//
 // TODO: This schema duplicates python/aibrix/aibrix/batch/template/schema.py
 // (ModelDeploymentTemplate, EngineSpec, ModelSourceSpec, AcceleratorSpec,
 // ParallelismSpec, EngineArgsSpec, QuantizationSpec, ProviderConfig). The
@@ -253,33 +268,43 @@ message GetModelRequest {
 service ModelDeploymentTemplateService {
   rpc ListModelDeploymentTemplates(ListModelDeploymentTemplatesRequest) returns (ListModelDeploymentTemplatesResponse) {
     option (google.api.http) = {
-      get: "/api/v1/model-deployment-templates"
+      get: "/api/v1/models/{model_id}/deployment-templates"
     };
   }
 
   rpc GetModelDeploymentTemplate(GetModelDeploymentTemplateRequest) returns (ModelDeploymentTemplate) {
     option (google.api.http) = {
-      get: "/api/v1/model-deployment-templates/{id}"
+      get: "/api/v1/models/{model_id}/deployment-templates/{id}"
     };
   }
 
   rpc CreateModelDeploymentTemplate(CreateModelDeploymentTemplateRequest) returns (ModelDeploymentTemplate) {
     option (google.api.http) = {
-      post: "/api/v1/model-deployment-templates"
+      post: "/api/v1/models/{model_id}/deployment-templates"
       body: "*"
     };
   }
 
   rpc UpdateModelDeploymentTemplate(UpdateModelDeploymentTemplateRequest) returns (ModelDeploymentTemplate) {
     option (google.api.http) = {
-      put: "/api/v1/model-deployment-templates/{id}"
+      put: "/api/v1/models/{model_id}/deployment-templates/{id}"
       body: "*"
     };
   }
 
   rpc DeleteModelDeploymentTemplate(DeleteModelDeploymentTemplateRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/api/v1/model-deployment-templates/{id}"
+      delete: "/api/v1/models/{model_id}/deployment-templates/{id}"
+    };
+  }
+
+  // Resolve looks up a template by (model_id, name, version). When `version`
+  // is empty, the server returns the latest active version of that name.
+  // 404 if no template matches; 409 if name has versions but none are active
+  // and version was not specified.
+  rpc ResolveModelDeploymentTemplate(ResolveModelDeploymentTemplateRequest) returns (ModelDeploymentTemplate) {
+    option (google.api.http) = {
+      get: "/api/v1/models/{model_id}/deployment-templates/by-name/{name}"
     };
   }
 }
@@ -373,8 +398,9 @@ message ProviderConfig {
 }
 
 message ListModelDeploymentTemplatesRequest {
-  string model_id = 1;                    // optional filter
-  string status = 2;                      // optional filter
+  string model_id = 1;                    // required path param
+  string status = 2;                      // optional filter — "active" | "deprecated" | "draft"
+  string name = 3;                        // optional filter — list all versions of a given name
 }
 
 message ListModelDeploymentTemplatesResponse {
@@ -382,27 +408,36 @@ message ListModelDeploymentTemplatesResponse {
 }
 
 message GetModelDeploymentTemplateRequest {
-  string id = 1;
+  string model_id = 1;                    // required path param
+  string id = 2;
 }
 
 message CreateModelDeploymentTemplateRequest {
-  string name = 1;
-  string version = 2;                     // optional, defaults to "v1.0.0"
-  string status = 3;                      // optional, defaults to "active"
-  string model_id = 4;                    // required
+  string model_id = 1;                    // required path param
+  string name = 2;
+  string version = 3;                     // optional, defaults to "v1.0.0"
+  string status = 4;                      // optional, defaults to "active"
   ModelDeploymentTemplateSpec spec = 5;
 }
 
 message UpdateModelDeploymentTemplateRequest {
-  string id = 1;
-  string name = 2;
-  string version = 3;
-  string status = 4;
-  ModelDeploymentTemplateSpec spec = 5;
+  string model_id = 1;                    // required path param
+  string id = 2;
+  string name = 3;
+  string version = 4;
+  string status = 5;
+  ModelDeploymentTemplateSpec spec = 6;
 }
 
 message DeleteModelDeploymentTemplateRequest {
-  string id = 1;
+  string model_id = 1;                    // required path param
+  string id = 2;
+}
+
+message ResolveModelDeploymentTemplateRequest {
+  string model_id = 1;                    // required path param
+  string name = 2;                        // required path param
+  string version = 3;                     // optional query — empty = latest active
 }
 
 // =============================================================================

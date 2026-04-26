@@ -163,6 +163,7 @@ export interface CreateModelDeploymentTemplateRequest {
 
 export interface UpdateModelDeploymentTemplateRequest {
   id: string;
+  modelId: string;
   name?: string;
   version?: string;
   status?: string;
@@ -312,36 +313,42 @@ export async function getModel(id: string): Promise<Model> {
 // --- Model Deployment Templates ---
 
 export async function listModelDeploymentTemplates(
-  modelId?: string,
+  modelId: string,
   status?: string,
 ): Promise<ModelDeploymentTemplate[]> {
-  const query = buildQuery({ model_id: modelId, status });
+  const query = buildQuery({ status });
   const data = await apiFetch<{ templates: ModelDeploymentTemplate[] }>(
-    `/api/v1/model-deployment-templates${query}`,
+    `/api/v1/models/${encodeURIComponent(modelId)}/deployment-templates${query}`,
   );
   return data.templates || [];
 }
 
-export async function getModelDeploymentTemplate(id: string): Promise<ModelDeploymentTemplate> {
+export async function getModelDeploymentTemplate(
+  modelId: string,
+  id: string,
+): Promise<ModelDeploymentTemplate> {
   return apiFetch<ModelDeploymentTemplate>(
-    `/api/v1/model-deployment-templates/${encodeURIComponent(id)}`,
+    `/api/v1/models/${encodeURIComponent(modelId)}/deployment-templates/${encodeURIComponent(id)}`,
   );
 }
 
 export async function createModelDeploymentTemplate(
   req: CreateModelDeploymentTemplateRequest,
 ): Promise<ModelDeploymentTemplate> {
-  return apiFetch<ModelDeploymentTemplate>('/api/v1/model-deployment-templates', {
-    method: 'POST',
-    body: JSON.stringify(camelToSnake(req)),
-  });
+  return apiFetch<ModelDeploymentTemplate>(
+    `/api/v1/models/${encodeURIComponent(req.modelId)}/deployment-templates`,
+    {
+      method: 'POST',
+      body: JSON.stringify(camelToSnake(req)),
+    },
+  );
 }
 
 export async function updateModelDeploymentTemplate(
   req: UpdateModelDeploymentTemplateRequest,
 ): Promise<ModelDeploymentTemplate> {
   return apiFetch<ModelDeploymentTemplate>(
-    `/api/v1/model-deployment-templates/${encodeURIComponent(req.id)}`,
+    `/api/v1/models/${encodeURIComponent(req.modelId)}/deployment-templates/${encodeURIComponent(req.id)}`,
     {
       method: 'PUT',
       body: JSON.stringify(camelToSnake(req)),
@@ -349,10 +356,28 @@ export async function updateModelDeploymentTemplate(
   );
 }
 
-export async function deleteModelDeploymentTemplate(id: string): Promise<void> {
+export async function deleteModelDeploymentTemplate(
+  modelId: string,
+  id: string,
+): Promise<void> {
   return apiFetch<void>(
-    `/api/v1/model-deployment-templates/${encodeURIComponent(id)}`,
+    `/api/v1/models/${encodeURIComponent(modelId)}/deployment-templates/${encodeURIComponent(id)}`,
     { method: 'DELETE' },
+  );
+}
+
+// resolveModelDeploymentTemplate looks up a template by (modelId, name, version).
+// version="" means "latest active". This is the same lookup that batch SDK
+// callers will use when they pass model_template + model_template_version
+// in extra_body.aibrix.
+export async function resolveModelDeploymentTemplate(
+  modelId: string,
+  name: string,
+  version?: string,
+): Promise<ModelDeploymentTemplate> {
+  const query = buildQuery({ version });
+  return apiFetch<ModelDeploymentTemplate>(
+    `/api/v1/models/${encodeURIComponent(modelId)}/deployment-templates/by-name/${encodeURIComponent(name)}${query}`,
   );
 }
 

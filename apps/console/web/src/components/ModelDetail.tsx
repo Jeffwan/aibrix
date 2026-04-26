@@ -198,7 +198,7 @@ export function ModelDetail({ modelId, onBack, onCreateTemplate, onEditTemplate 
     if (!modelId) return;
     if (!window.confirm('Delete this deployment template?')) return;
     try {
-      await deleteModelDeploymentTemplate(templateId);
+      await deleteModelDeploymentTemplate(modelId, templateId);
       refreshTemplates(modelId);
     } catch (err) {
       console.error('Failed to delete template:', err);

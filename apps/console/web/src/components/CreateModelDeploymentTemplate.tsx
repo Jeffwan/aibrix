@@ -75,7 +75,7 @@ export function CreateModelDeploymentTemplate({
 
   useEffect(() => {
     if (!templateId) return;
-    getModelDeploymentTemplate(templateId)
+    getModelDeploymentTemplate(modelId, templateId)
       .then((t: ModelDeploymentTemplate) => {
         setName(t.name);
         setVersion(t.version);
@@ -90,7 +90,7 @@ export function CreateModelDeploymentTemplate({
         );
       })
       .catch(err => setError(`Failed to load template: ${err}`));
-  }, [templateId]);
+  }, [templateId, modelId]);
 
   const updateSpec = <K extends keyof ModelDeploymentTemplateSpec>(
     key: K,
@@ -164,6 +164,7 @@ export function CreateModelDeploymentTemplate({
       if (isEdit && templateId) {
         await updateModelDeploymentTemplate({
           id: templateId,
+          modelId,
           name,
           version,
           status: statusValue,

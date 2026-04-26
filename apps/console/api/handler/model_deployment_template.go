@@ -35,15 +35,19 @@ func NewModelDeploymentTemplateHandler(s store.Store) *ModelDeploymentTemplateHa
 }
 
 func (h *ModelDeploymentTemplateHandler) ListModelDeploymentTemplates(ctx context.Context, req *pb.ListModelDeploymentTemplatesRequest) (*pb.ListModelDeploymentTemplatesResponse, error) {
-	templates, err := h.store.ListModelDeploymentTemplates(ctx, req.GetModelId(), req.GetStatus())
+	templates, err := h.store.ListModelDeploymentTemplates(ctx, req.GetModelId(), req.GetStatus(), req.GetName())
 	if err != nil {
 		return nil, err
 	}
 	return &pb.ListModelDeploymentTemplatesResponse{Templates: templates}, nil
 }
 
+func (h *ModelDeploymentTemplateHandler) ResolveModelDeploymentTemplate(ctx context.Context, req *pb.ResolveModelDeploymentTemplateRequest) (*pb.ModelDeploymentTemplate, error) {
+	return h.store.ResolveModelDeploymentTemplate(ctx, req.GetModelId(), req.GetName(), req.GetVersion())
+}
+
 func (h *ModelDeploymentTemplateHandler) GetModelDeploymentTemplate(ctx context.Context, req *pb.GetModelDeploymentTemplateRequest) (*pb.ModelDeploymentTemplate, error) {
-	return h.store.GetModelDeploymentTemplate(ctx, req.GetId())
+	return h.store.GetModelDeploymentTemplate(ctx, req.GetModelId(), req.GetId())
 }
 
 func (h *ModelDeploymentTemplateHandler) CreateModelDeploymentTemplate(ctx context.Context, req *pb.CreateModelDeploymentTemplateRequest) (*pb.ModelDeploymentTemplate, error) {
@@ -55,7 +59,7 @@ func (h *ModelDeploymentTemplateHandler) UpdateModelDeploymentTemplate(ctx conte
 }
 
 func (h *ModelDeploymentTemplateHandler) DeleteModelDeploymentTemplate(ctx context.Context, req *pb.DeleteModelDeploymentTemplateRequest) (*emptypb.Empty, error) {
-	if err := h.store.DeleteModelDeploymentTemplate(ctx, req.GetId()); err != nil {
+	if err := h.store.DeleteModelDeploymentTemplate(ctx, req.GetModelId(), req.GetId()); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
