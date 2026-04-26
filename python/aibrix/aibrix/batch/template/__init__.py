@@ -50,7 +50,6 @@ from .schema import (
     ModelDeploymentTemplateSpec,
     ModelSourceSpec,
     ModelSourceType,
-    OverridesSpec,
     ParallelismSpec,
     Priority,
     ProviderConfig,
@@ -63,6 +62,8 @@ from .schema import (
     StorageBackend,
     StorageSpec,
     TemplateStatus,
+    TemplateOverridesSpec,
+    ProfileOverridesSpec,
     WeightQuantization,
 )
 
@@ -116,6 +117,7 @@ __all__ = [
     "StorageBackend",
     "StorageSpec",
     # Overrides + resolved
-    "OverridesSpec",
+    "TemplateOverridesSpec",
+    "ProfileOverridesSpec",
     "ResolvedJobSpec",
 ]
