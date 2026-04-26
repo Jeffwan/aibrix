@@ -829,17 +829,17 @@ type Model struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	IconBg        string                 `protobuf:"bytes,4,opt,name=icon_bg,json=iconBg,proto3" json:"icon_bg,omitempty"`
-	IconText      string                 `protobuf:"bytes,5,opt,name=icon_text,json=iconText,proto3" json:"icon_text,omitempty"`
-	IconTextColor string                 `protobuf:"bytes,6,opt,name=icon_text_color,json=iconTextColor,proto3" json:"icon_text_color,omitempty"`
-	Categories    []string               `protobuf:"bytes,7,rep,name=categories,proto3" json:"categories,omitempty"` // "LLM", "Audio", "Image", "Video", "Vision", "Embedding", "Reranks"
-	IsNew         bool                   `protobuf:"varint,8,opt,name=is_new,json=isNew,proto3" json:"is_new,omitempty"`
-	Pricing       *ModelPricing          `protobuf:"bytes,9,opt,name=pricing,proto3" json:"pricing,omitempty"`
-	ContextLength string                 `protobuf:"bytes,10,opt,name=context_length,json=contextLength,proto3" json:"context_length,omitempty"`
-	Description   string                 `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
-	Metadata      *ModelMetadata         `protobuf:"bytes,12,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Specification *ModelSpecification    `protobuf:"bytes,13,opt,name=specification,proto3" json:"specification,omitempty"`
-	Tags          []string               `protobuf:"bytes,14,rep,name=tags,proto3" json:"tags,omitempty"`
+	IconBg        string                 `protobuf:"bytes,3,opt,name=icon_bg,json=iconBg,proto3" json:"icon_bg,omitempty"`
+	IconText      string                 `protobuf:"bytes,4,opt,name=icon_text,json=iconText,proto3" json:"icon_text,omitempty"`
+	IconTextColor string                 `protobuf:"bytes,5,opt,name=icon_text_color,json=iconTextColor,proto3" json:"icon_text_color,omitempty"`
+	Categories    []string               `protobuf:"bytes,6,rep,name=categories,proto3" json:"categories,omitempty"` // "LLM", "Audio", "Image", "Video", "Vision", "Embedding", "Reranks"
+	IsNew         bool                   `protobuf:"varint,7,opt,name=is_new,json=isNew,proto3" json:"is_new,omitempty"`
+	Pricing       *ModelPricing          `protobuf:"bytes,8,opt,name=pricing,proto3" json:"pricing,omitempty"`
+	ContextLength string                 `protobuf:"bytes,9,opt,name=context_length,json=contextLength,proto3" json:"context_length,omitempty"`
+	Description   string                 `protobuf:"bytes,10,opt,name=description,proto3" json:"description,omitempty"`
+	Metadata      *ModelMetadata         `protobuf:"bytes,11,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Specification *ModelSpecification    `protobuf:"bytes,12,opt,name=specification,proto3" json:"specification,omitempty"`
+	Tags          []string               `protobuf:"bytes,13,rep,name=tags,proto3" json:"tags,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -971,7 +971,7 @@ type ModelPricing struct {
 	CachedInput   string                 `protobuf:"bytes,2,opt,name=cached_input,json=cachedInput,proto3" json:"cached_input,omitempty"`
 	Output        string                 `protobuf:"bytes,3,opt,name=output,proto3" json:"output,omitempty"`
 	PerMinute     string                 `protobuf:"bytes,4,opt,name=per_minute,json=perMinute,proto3" json:"per_minute,omitempty"` // audio (e.g. Whisper)
-	PerImage      string                 `protobuf:"bytes,6,opt,name=per_image,json=perImage,proto3" json:"per_image,omitempty"`    // formerly per_ea — image generation
+	PerImage      string                 `protobuf:"bytes,5,opt,name=per_image,json=perImage,proto3" json:"per_image,omitempty"`    // formerly per_ea — image generation
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1045,8 +1045,8 @@ type ModelMetadata struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
 	CreatedOn     string                 `protobuf:"bytes,2,opt,name=created_on,json=createdOn,proto3" json:"created_on,omitempty"`
-	ProviderName  string                 `protobuf:"bytes,4,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
-	HuggingFace   string                 `protobuf:"bytes,5,opt,name=hugging_face,json=huggingFace,proto3" json:"hugging_face,omitempty"`
+	ProviderName  string                 `protobuf:"bytes,3,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
+	HuggingFace   string                 `protobuf:"bytes,4,opt,name=hugging_face,json=huggingFace,proto3" json:"hugging_face,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3190,38 +3190,37 @@ const file_console_v1_console_proto_rawDesc = "" +
 	"\v_max_tokensB\x0e\n" +
 	"\f_temperatureB\b\n" +
 	"\x06_top_pB\x04\n" +
-	"\x02_n\"\xde\x03\n" +
+	"\x02_n\"\xce\x03\n" +
 	"\x05Model\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n" +
-	"\aicon_bg\x18\x04 \x01(\tR\x06iconBg\x12\x1b\n" +
-	"\ticon_text\x18\x05 \x01(\tR\biconText\x12&\n" +
-	"\x0ficon_text_color\x18\x06 \x01(\tR\riconTextColor\x12\x1e\n" +
+	"\aicon_bg\x18\x03 \x01(\tR\x06iconBg\x12\x1b\n" +
+	"\ticon_text\x18\x04 \x01(\tR\biconText\x12&\n" +
+	"\x0ficon_text_color\x18\x05 \x01(\tR\riconTextColor\x12\x1e\n" +
 	"\n" +
-	"categories\x18\a \x03(\tR\n" +
+	"categories\x18\x06 \x03(\tR\n" +
 	"categories\x12\x15\n" +
-	"\x06is_new\x18\b \x01(\bR\x05isNew\x122\n" +
-	"\apricing\x18\t \x01(\v2\x18.console.v1.ModelPricingR\apricing\x12%\n" +
-	"\x0econtext_length\x18\n" +
-	" \x01(\tR\rcontextLength\x12 \n" +
-	"\vdescription\x18\v \x01(\tR\vdescription\x125\n" +
-	"\bmetadata\x18\f \x01(\v2\x19.console.v1.ModelMetadataR\bmetadata\x12D\n" +
-	"\rspecification\x18\r \x01(\v2\x1e.console.v1.ModelSpecificationR\rspecification\x12\x12\n" +
-	"\x04tags\x18\x0e \x03(\tR\x04tagsJ\x04\b\x03\x10\x04R\bprovider\"\xce\x01\n" +
+	"\x06is_new\x18\a \x01(\bR\x05isNew\x122\n" +
+	"\apricing\x18\b \x01(\v2\x18.console.v1.ModelPricingR\apricing\x12%\n" +
+	"\x0econtext_length\x18\t \x01(\tR\rcontextLength\x12 \n" +
+	"\vdescription\x18\n" +
+	" \x01(\tR\vdescription\x125\n" +
+	"\bmetadata\x18\v \x01(\v2\x19.console.v1.ModelMetadataR\bmetadata\x12D\n" +
+	"\rspecification\x18\f \x01(\v2\x1e.console.v1.ModelSpecificationR\rspecification\x12\x12\n" +
+	"\x04tags\x18\r \x03(\tR\x04tags\"\xac\x01\n" +
 	"\fModelPricing\x12%\n" +
 	"\x0euncached_input\x18\x01 \x01(\tR\runcachedInput\x12!\n" +
 	"\fcached_input\x18\x02 \x01(\tR\vcachedInput\x12\x16\n" +
 	"\x06output\x18\x03 \x01(\tR\x06output\x12\x1d\n" +
 	"\n" +
 	"per_minute\x18\x04 \x01(\tR\tperMinute\x12\x1b\n" +
-	"\tper_image\x18\x06 \x01(\tR\bperImageJ\x04\b\x05\x10\x06J\x04\b\a\x10\bR\bper_stepR\n" +
-	"per_tokens\"\x98\x01\n" +
+	"\tper_image\x18\x05 \x01(\tR\bperImage\"\x8c\x01\n" +
 	"\rModelMetadata\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1d\n" +
 	"\n" +
 	"created_on\x18\x02 \x01(\tR\tcreatedOn\x12#\n" +
-	"\rprovider_name\x18\x04 \x01(\tR\fproviderName\x12!\n" +
-	"\fhugging_face\x18\x05 \x01(\tR\vhuggingFaceJ\x04\b\x03\x10\x04R\x04kind\"\x82\x01\n" +
+	"\rprovider_name\x18\x03 \x01(\tR\fproviderName\x12!\n" +
+	"\fhugging_face\x18\x04 \x01(\tR\vhuggingFace\"\x82\x01\n" +
 	"\x12ModelSpecification\x12\x1e\n" +
 	"\n" +
 	"calibrated\x18\x01 \x01(\bR\n" +

@@ -180,20 +180,17 @@ service ModelService {
 message Model {
   string id = 1;
   string name = 2;
-  // 3 reserved: previously top-level `provider`; now sourced from metadata.provider_name.
-  reserved 3;
-  reserved "provider";
-  string icon_bg = 4;
-  string icon_text = 5;
-  string icon_text_color = 6;
-  repeated string categories = 7; // "LLM", "Audio", "Image", "Video", "Vision", "Embedding", "Reranks"
-  bool is_new = 8;
-  ModelPricing pricing = 9;
-  string context_length = 10;
-  string description = 11;
-  ModelMetadata metadata = 12;
-  ModelSpecification specification = 13;
-  repeated string tags = 14;
+  string icon_bg = 3;
+  string icon_text = 4;
+  string icon_text_color = 5;
+  repeated string categories = 6; // "LLM", "Audio", "Image", "Video", "Vision", "Embedding", "Reranks"
+  bool is_new = 7;
+  ModelPricing pricing = 8;
+  string context_length = 9;
+  string description = 10;
+  ModelMetadata metadata = 11;
+  ModelSpecification specification = 12;
+  repeated string tags = 13;
 }
 
 message ModelPricing {
@@ -201,23 +198,14 @@ message ModelPricing {
   string cached_input = 2;
   string output = 3;
   string per_minute = 4;         // audio (e.g. Whisper)
-  // 5 reserved: previously `per_step` (unused). Re-add when diffusion pricing arrives.
-  reserved 5;
-  reserved "per_step";
-  string per_image = 6;          // formerly per_ea — image generation
-  // 7 reserved: previously `per_tokens` — collapsed into `uncached_input`.
-  reserved 7;
-  reserved "per_tokens";
+  string per_image = 5;          // formerly per_ea — image generation
 }
 
 message ModelMetadata {
   string state = 1;
   string created_on = 2;
-  // 3 reserved: previously `kind` (unused).
-  reserved 3;
-  reserved "kind";
-  string provider_name = 4;
-  string hugging_face = 5;
+  string provider_name = 3;
+  string hugging_face = 4;
 }
 
 message ModelSpecification {
