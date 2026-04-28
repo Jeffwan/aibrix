@@ -1,0 +1,186 @@
+{
+  "info": {
+    "_postman_id": "9f2b6a40-1aa1-4fb5-a3c2-a64c2a3b1f00",
+    "name": "Aibrix Metadata API",
+    "description": "OpenAI-compatible Files + Batches API exposed by aibrix.metadata. Works for both Setup A (local processes) and Setup B (K8s port-forward) -- both default to http://127.0.0.1:8090.\n\nTypical flow:\n1. GET /readyz\n2. POST /v1/files (purpose=batch)  -> save {{file_id}}\n3. POST /v1/batches               -> save {{batch_id}}\n4. GET  /v1/batches/{{batch_id}}  (poll)\n5. GET  /v1/files/{{output_file_id}}/content",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_url", "value": "http://127.0.0.1:8090", "type": "string"},
+    {"key": "api_key", "value": "sk-aibrix-local", "type": "string"},
+    {"key": "file_id", "value": "", "type": "string"},
+    {"key": "batch_id", "value": "", "type": "string"},
+    {"key": "output_file_id", "value": "", "type": "string"},
+    {"key": "model_template", "value": "", "type": "string", "description": "Aibrix ModelDeploymentTemplate name (Setup B only)"},
+    {"key": "profile", "value": "", "type": "string", "description": "Aibrix BatchProfile name (Setup B only)"}
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{"key": "token", "value": "{{api_key}}", "type": "string"}]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /healthz",
+          "request": {"method": "GET", "url": {"raw": "{{base_url}}/healthz", "host": ["{{base_url}}"], "path": ["healthz"]}}
+        },
+        {
+          "name": "GET /readyz",
+          "request": {"method": "GET", "url": {"raw": "{{base_url}}/readyz", "host": ["{{base_url}}"], "path": ["readyz"]}}
+        },
+        {
+          "name": "GET /status",
+          "request": {"method": "GET", "url": {"raw": "{{base_url}}/status", "host": ["{{base_url}}"], "path": ["status"]}}
+        }
+      ]
+    },
+    {
+      "name": "Files",
+      "item": [
+        {
+          "name": "POST /v1/files (upload jsonl)",
+          "event": [{
+            "listen": "test",
+            "script": {"exec": [
+              "const j = pm.response.json();",
+              "if (j && j.id) { pm.collectionVariables.set('file_id', j.id); }",
+              "pm.test('200', () => pm.response.to.have.status(200));"
+            ], "type": "text/javascript"}
+          }],
+          "request": {
+            "method": "POST",
+            "url": {"raw": "{{base_url}}/v1/files", "host": ["{{base_url}}"], "path": ["v1", "files"]},
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key": "purpose", "value": "batch", "type": "text"},
+                {"key": "file", "type": "file", "src": "./input.jsonl",
+                  "description": "JSONL with one OpenAI-shaped request per line. Sample line: {\"custom_id\":\"req-1\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"gpt-3.5-turbo\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}}"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /v1/files (list)",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{base_url}}/v1/files?purpose=batch&limit=20",
+                    "host": ["{{base_url}}"], "path": ["v1", "files"],
+                    "query": [{"key": "purpose", "value": "batch"}, {"key": "limit", "value": "20"}]}
+          }
+        },
+        {
+          "name": "GET /v1/files/{file_id}",
+          "request": {"method": "GET",
+            "url": {"raw": "{{base_url}}/v1/files/{{file_id}}",
+                    "host": ["{{base_url}}"], "path": ["v1", "files", "{{file_id}}"]}}
+        },
+        {
+          "name": "GET /v1/files/{file_id}/content",
+          "request": {"method": "GET",
+            "url": {"raw": "{{base_url}}/v1/files/{{file_id}}/content",
+                    "host": ["{{base_url}}"], "path": ["v1", "files", "{{file_id}}", "content"]}}
+        },
+        {
+          "name": "HEAD /v1/files/{file_id}",
+          "request": {"method": "HEAD",
+            "url": {"raw": "{{base_url}}/v1/files/{{file_id}}",
+                    "host": ["{{base_url}}"], "path": ["v1", "files", "{{file_id}}"]}}
+        },
+        {
+          "name": "DELETE /v1/files/{file_id}",
+          "request": {"method": "DELETE",
+            "url": {"raw": "{{base_url}}/v1/files/{{file_id}}",
+                    "host": ["{{base_url}}"], "path": ["v1", "files", "{{file_id}}"]}}
+        }
+      ]
+    },
+    {
+      "name": "Batches",
+      "item": [
+        {
+          "name": "POST /v1/batches (create)",
+          "event": [{
+            "listen": "test",
+            "script": {"exec": [
+              "const j = pm.response.json();",
+              "if (j && j.id) { pm.collectionVariables.set('batch_id', j.id); }",
+              "pm.test('200', () => pm.response.to.have.status(200));"
+            ], "type": "text/javascript"}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/v1/batches", "host": ["{{base_url}}"], "path": ["v1", "batches"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"input_file_id\": \"{{file_id}}\",\n  \"endpoint\": \"/v1/chat/completions\",\n  \"completion_window\": \"24h\",\n  \"metadata\": {\"created_by\": \"postman\"},\n  \"aibrix\": {\n    \"model_template\": \"{{model_template}}\",\n    \"profile\": \"{{profile}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /v1/batches/{batch_id}",
+          "event": [{
+            "listen": "test",
+            "script": {"exec": [
+              "const j = pm.response.json();",
+              "if (j && j.output_file_id) { pm.collectionVariables.set('output_file_id', j.output_file_id); }"
+            ], "type": "text/javascript"}
+          }],
+          "request": {"method": "GET",
+            "url": {"raw": "{{base_url}}/v1/batches/{{batch_id}}",
+                    "host": ["{{base_url}}"], "path": ["v1", "batches", "{{batch_id}}"]}}
+        },
+        {
+          "name": "POST /v1/batches/{batch_id}/cancel",
+          "request": {"method": "POST",
+            "url": {"raw": "{{base_url}}/v1/batches/{{batch_id}}/cancel",
+                    "host": ["{{base_url}}"], "path": ["v1", "batches", "{{batch_id}}", "cancel"]}}
+        },
+        {
+          "name": "GET /v1/batches (list)",
+          "request": {"method": "GET",
+            "url": {"raw": "{{base_url}}/v1/batches?limit=20",
+                    "host": ["{{base_url}}"], "path": ["v1", "batches"],
+                    "query": [{"key": "limit", "value": "20"}]}}
+        }
+      ]
+    },
+    {
+      "name": "Models",
+      "item": [
+        {
+          "name": "GET /v1/models",
+          "request": {"method": "GET",
+            "url": {"raw": "{{base_url}}/v1/models",
+                    "host": ["{{base_url}}"], "path": ["v1", "models"]}}
+        }
+      ]
+    },
+    {
+      "name": "Users (Aibrix CRUD)",
+      "item": [
+        {
+          "name": "POST /CreateUser",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/CreateUser", "host": ["{{base_url}}"], "path": ["CreateUser"]},
+            "body": {"mode": "raw", "raw": "{\"name\": \"alice\"}"}
+          }
+        },
+        {
+          "name": "POST /ReadUser",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{base_url}}/ReadUser", "host": ["{{base_url}}"], "path": ["ReadUser"]},
+            "body": {"mode": "raw", "raw": "{\"name\": \"alice\"}"}
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+# In-cluster fake inference server, exposed as a Service so K8s batch worker
+# pods can call it. Built from scripts/dev/fake_inference.py packaged via a
+# ConfigMap (no image build required).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fake-inference-src
+  namespace: aibrix-system
+data:
+  requirements.txt: |
+    fastapi==0.115.0
+    uvicorn==0.30.6
+  fake_inference.py: |
+    # NOTE: keep this in sync with scripts/dev/fake_inference.py
+    import time, uuid
+    from fastapi import FastAPI, Request
+    import uvicorn
+    app = FastAPI()
+    @app.get("/health")
+    async def h(): return {"status":"ok"}
+    @app.post("/v1/chat/completions")
+    async def cc(r: Request):
+        b = await r.json()
+        return {"id": f"chatcmpl-{uuid.uuid4().hex[:12]}", "object":"chat.completion",
+                "created": int(time.time()), "model": b.get("model","fake"),
+                "choices":[{"index":0,"message":{"role":"assistant","content":"fake reply"},"finish_reason":"stop"}],
+                "usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}
+    @app.post("/v1/completions")
+    async def co(r: Request):
+        b = await r.json()
+        return {"id": f"cmpl-{uuid.uuid4().hex[:12]}", "object":"text_completion",
+                "created": int(time.time()), "model": b.get("model","fake"),
+                "choices":[{"text":" fake","index":0,"finish_reason":"stop"}],
+                "usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}
+    @app.post("/v1/embeddings")
+    async def em(r: Request):
+        b = await r.json()
+        return {"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.0]*8}],
+                "model": b.get("model","fake"),"usage":{"prompt_tokens":4,"total_tokens":4}}
+    @app.post("/v1/rerank")
+    async def rr(r: Request):
+        b = await r.json(); docs = b.get("documents", [])
+        return {"model": b.get("model","fake"),
+                "results":[{"index":i,"relevance_score":1.0-0.1*i} for i in range(len(docs))]}
+    if __name__ == "__main__":
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-vllm
+  namespace: aibrix-system
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: fake-vllm}}
+  template:
+    metadata: {labels: {app: fake-vllm}}
+    spec:
+      containers:
+        - name: server
+          image: python:3.11-slim
+          command: ["sh", "-c"]
+          args:
+            - |
+              pip install --quiet -r /src/requirements.txt
+              python /src/fake_inference.py
+          ports: [{containerPort: 8000}]
+          volumeMounts: [{name: src, mountPath: /src}]
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: src
+          configMap: {name: fake-inference-src}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-vllm
+  namespace: aibrix-system
+spec:
+  selector: {app: fake-vllm}
+  ports: [{port: 8000, targetPort: 8000}]

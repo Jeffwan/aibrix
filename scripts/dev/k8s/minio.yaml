@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aibrix-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: aibrix-system
+  labels: {app: minio}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: minio}}
+  template:
+    metadata: {labels: {app: minio}}
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - {name: MINIO_ROOT_USER, value: aibrix}
+            - {name: MINIO_ROOT_PASSWORD, value: aibrix-secret}
+          ports:
+            - {containerPort: 9000, name: api}
+            - {containerPort: 9001, name: console}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+          readinessProbe:
+            httpGet: {path: /minio/health/ready, port: 9000}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - {name: data, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: aibrix-system
+spec:
+  selector: {app: minio}
+  ports:
+    - {name: api, port: 9000, targetPort: 9000}
+    - {name: console, port: 9001, targetPort: 9001}
+---
+# One-shot job to create the bucket on first apply.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-mkbucket
+  namespace: aibrix-system
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          command:
+            - sh
+            - -c
+            - |
+              until mc alias set local http://minio:9000 aibrix aibrix-secret; do sleep 2; done
+              mc mb --ignore-existing local/aibrix
+              mc ls local/
+---
+# S3 credentials secret consumed by metadata pod via s3-env-patch.yaml.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3-credentials
+  namespace: aibrix-system
+type: Opaque
+stringData:
+  STORAGE_AWS_ACCESS_KEY_ID: aibrix
+  STORAGE_AWS_SECRET_ACCESS_KEY: aibrix-secret
+  STORAGE_AWS_ENDPOINT_URL: http://minio.aibrix-system.svc.cluster.local:9000
+  STORAGE_AWS_REGION: us-east-1
+  STORAGE_AWS_BUCKET: aibrix
