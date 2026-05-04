@@ -57,6 +57,8 @@ type AuthConfig struct {
 	OIDCClientSecret          string
 	OIDCRedirectURL           string
 	OIDCPostLogoutRedirectURL string
+	OIDCGroupsClaim           string
+	OIDCAdminGroups           string
 	SessionSecret             string
 	DevUserName               string
 	DevUserEmail              string
@@ -113,11 +115,17 @@ type AuthMiddleware struct {
 	config AuthConfig
 
 	// OIDC components, populated only when Mode == "oidc".
-	oidcProvider       *oidc.Provider
-	oidcVerifier       *oidc.IDTokenVerifier
-	oauth2Config       *oauth2.Config
-	oidcEndSessionURL  string // discovered end_session_endpoint, may be empty
+	oidcProvider      *oidc.Provider
+	oidcVerifier      *oidc.IDTokenVerifier
+	oauth2Config      *oauth2.Config
+	oidcEndSessionURL string // discovered end_session_endpoint, may be empty
+	oidcAdminGroups   map[string]struct{}
 }
+
+const (
+	roleAdmin  = "admin"
+	roleViewer = "viewer"
+)
 
 // NewAuthMiddleware creates a new AuthMiddleware with the given configuration.
 // SessionSecret must be non-empty; callers should obtain it from config.Load,
@@ -161,6 +169,8 @@ func NewAuthMiddleware(cfg AuthConfig) (*AuthMiddleware, error) {
 		if err := provider.Claims(&disc); err == nil {
 			a.oidcEndSessionURL = disc.EndSessionEndpoint
 		}
+
+		a.oidcAdminGroups = parseAdminGroups(cfg.OIDCAdminGroups)
 	}
 
 	return a, nil
@@ -411,6 +421,9 @@ func (a *AuthMiddleware) handleOIDCCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Decode standard claims into a typed struct, plus the raw claim map so
+	// we can pull out the (configurable) groups claim without having to
+	// re-declare the struct per provider.
 	var claims struct {
 		Sub   string `json:"sub"`
 		Email string `json:"email"`
@@ -418,6 +431,11 @@ func (a *AuthMiddleware) handleOIDCCallback(w http.ResponseWriter, r *http.Reque
 		Nonce string `json:"nonce"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
+		http.Error(w, `{"error":"failed to parse id_token claims"}`, http.StatusBadGateway)
+		return
+	}
+	var rawClaims map[string]interface{}
+	if err := idToken.Claims(&rawClaims); err != nil {
 		http.Error(w, `{"error":"failed to parse id_token claims"}`, http.StatusBadGateway)
 		return
 	}
@@ -432,7 +450,7 @@ func (a *AuthMiddleware) handleOIDCCallback(w http.ResponseWriter, r *http.Reque
 		ID:    claims.Sub,
 		Name:  claims.Name,
 		Email: claims.Email,
-		Role:  "admin",
+		Role:  a.roleFromClaims(rawClaims),
 	}
 
 	if err := a.setSessionCookie(w, r, user, rawIDToken); err != nil {
@@ -623,6 +641,64 @@ func (a *AuthMiddleware) sign(data []byte) []byte {
 func (a *AuthMiddleware) verify(data, signature []byte) bool {
 	expected := a.sign(data)
 	return hmac.Equal(expected, signature)
+}
+
+// parseAdminGroups normalises the OIDC_ADMIN_GROUPS CSV into a lookup set.
+func parseAdminGroups(csv string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, g := range strings.Split(csv, ",") {
+		if g = strings.TrimSpace(g); g != "" {
+			out[g] = struct{}{}
+		}
+	}
+	return out
+}
+
+// roleFromClaims maps a user to a role based on the configured groups
+// claim. The default role is "viewer"; users belonging to any group named
+// in OIDC_ADMIN_GROUPS are promoted to "admin".
+//
+// The groups claim is permissively typed: providers may emit either a
+// JSON array of strings or a single string. Anything else is treated as
+// no membership.
+func (a *AuthMiddleware) roleFromClaims(claims map[string]interface{}) string {
+	if len(a.oidcAdminGroups) == 0 {
+		return roleViewer
+	}
+	claimName := a.config.OIDCGroupsClaim
+	if claimName == "" {
+		claimName = "groups"
+	}
+	raw, ok := claims[claimName]
+	if !ok {
+		return roleViewer
+	}
+	for _, g := range coerceStringSlice(raw) {
+		if _, ok := a.oidcAdminGroups[g]; ok {
+			return roleAdmin
+		}
+	}
+	return roleViewer
+}
+
+// coerceStringSlice accepts the loose JSON shapes a groups claim is
+// commonly seen in (string, []string, []interface{}).
+func coerceStringSlice(v interface{}) []string {
+	switch x := v.(type) {
+	case string:
+		return []string{x}
+	case []string:
+		return x
+	case []interface{}:
+		out := make([]string, 0, len(x))
+		for _, e := range x {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // randomString returns a base64url-encoded cryptographically random string.
