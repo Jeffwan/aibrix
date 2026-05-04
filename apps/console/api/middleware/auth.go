@@ -19,6 +19,7 @@ package middleware
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -27,13 +28,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"golang.org/x/oauth2"
 	"k8s.io/klog/v2"
 )
 
 const (
 	sessionCookieName = "aibrix_session"
 	sessionMaxAge     = 24 * time.Hour
+
+	oidcStateCookieName    = "aibrix_oidc_state"
+	oidcNonceCookieName    = "aibrix_oidc_nonce"
+	oidcReturnToCookieName = "aibrix_return_to"
+	oidcTempCookieMaxAge   = 10 * time.Minute
 
 	authModeDev   = "dev"
 	authModeBasic = "basic"
@@ -79,21 +87,48 @@ func GetUser(ctx context.Context) *UserInfo {
 // AuthMiddleware provides authentication for HTTP handlers.
 type AuthMiddleware struct {
 	config AuthConfig
+
+	// OIDC components, populated only when Mode == "oidc".
+	oidcProvider *oidc.Provider
+	oidcVerifier *oidc.IDTokenVerifier
+	oauth2Config *oauth2.Config
 }
 
 // NewAuthMiddleware creates a new AuthMiddleware with the given configuration.
 // SessionSecret must be non-empty; callers should obtain it from config.Load,
-// which enforces a strong secret in non-dev modes.
-func NewAuthMiddleware(cfg AuthConfig) *AuthMiddleware {
+// which enforces a strong secret in non-dev modes. In OIDC mode, this
+// performs provider discovery against OIDCIssuerURL and returns an error if
+// discovery fails.
+func NewAuthMiddleware(cfg AuthConfig) (*AuthMiddleware, error) {
 	if cfg.Mode == "" {
 		cfg.Mode = authModeDev
 	}
 	if cfg.SessionSecret == "" {
-		panic("auth: SessionSecret must be set")
+		return nil, fmt.Errorf("auth: SessionSecret must be set")
 	}
-	return &AuthMiddleware{
-		config: cfg,
+
+	a := &AuthMiddleware{config: cfg}
+
+	if cfg.Mode == authModeOIDC {
+		if cfg.OIDCIssuerURL == "" || cfg.OIDCClientID == "" || cfg.OIDCRedirectURL == "" {
+			return nil, fmt.Errorf("auth: OIDC mode requires OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_REDIRECT_URL")
+		}
+		provider, err := oidc.NewProvider(context.Background(), cfg.OIDCIssuerURL)
+		if err != nil {
+			return nil, fmt.Errorf("auth: oidc discovery failed: %w", err)
+		}
+		a.oidcProvider = provider
+		a.oidcVerifier = provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID})
+		a.oauth2Config = &oauth2.Config{
+			ClientID:     cfg.OIDCClientID,
+			ClientSecret: cfg.OIDCClientSecret,
+			RedirectURL:  cfg.OIDCRedirectURL,
+			Endpoint:     provider.Endpoint(),
+			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		}
 	}
+
+	return a, nil
 }
 
 // publicPaths that skip authentication checks.
@@ -187,15 +222,7 @@ func (a *AuthMiddleware) handleLoginGet(
 ) {
 	switch a.config.Mode {
 	case authModeOIDC:
-		// TODO: Initialize OIDC provider and redirect to authorization URL.
-		// When OIDC dependencies are added, this will:
-		//   1. Create an oidc.Provider from OIDCIssuerURL
-		//   2. Build an oauth2.Config with ClientID, ClientSecret, RedirectURL
-		//   3. Generate a state parameter and store it in a cookie
-		//   4. Redirect to provider.Endpoint().AuthURL with the state
-		http.Error(w,
-			`{"error":"oidc not yet implemented"}`,
-			http.StatusNotImplemented)
+		a.handleOIDCLogin(w, r)
 	case authModeBasic:
 		writeJSON(w, http.StatusOK, map[string]string{
 			"mode":    authModeBasic,
@@ -269,18 +296,123 @@ func (a *AuthMiddleware) handleCallback(
 			http.StatusBadRequest)
 		return
 	}
+	a.handleOIDCCallback(w, r)
+}
 
-	// TODO: Implement OIDC callback when dependencies are available.
-	// When implemented, this will:
-	//   1. Verify the state parameter from the cookie
-	//   2. Exchange the authorization code for tokens using oauth2.Config
-	//   3. Validate the ID token using oidc.Verifier
-	//   4. Extract claims (sub, email, name) from the ID token
-	//   5. Create a UserInfo and set a session cookie
-	//   6. Redirect to frontend root "/"
-	http.Error(w,
-		`{"error":"oidc not yet implemented"}`,
-		http.StatusNotImplemented)
+// handleOIDCLogin generates state + nonce, stores them in short-lived cookies,
+// and redirects the browser to the OIDC provider's authorization endpoint.
+func (a *AuthMiddleware) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
+	state, err := randomString(32)
+	if err != nil {
+		http.Error(w, `{"error":"failed to generate state"}`, http.StatusInternalServerError)
+		return
+	}
+	nonce, err := randomString(32)
+	if err != nil {
+		http.Error(w, `{"error":"failed to generate nonce"}`, http.StatusInternalServerError)
+		return
+	}
+
+	setTempCookie(w, oidcStateCookieName, state, oidcTempCookieMaxAge)
+	setTempCookie(w, oidcNonceCookieName, nonce, oidcTempCookieMaxAge)
+
+	if returnTo := r.URL.Query().Get("return"); returnTo != "" && strings.HasPrefix(returnTo, "/") {
+		setTempCookie(w, oidcReturnToCookieName, returnTo, oidcTempCookieMaxAge)
+	}
+
+	authURL := a.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce))
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+// handleOIDCCallback validates the authorization response and establishes a
+// session. It verifies state, exchanges the code, validates the ID token, and
+// checks the nonce against the cookie before creating a UserInfo.
+func (a *AuthMiddleware) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	q := r.URL.Query()
+
+	if errParam := q.Get("error"); errParam != "" {
+		desc := q.Get("error_description")
+		klog.Warningf("OIDC authorize error: %s %s", errParam, desc)
+		http.Error(w,
+			fmt.Sprintf(`{"error":"authorize error: %s"}`, errParam),
+			http.StatusBadRequest)
+		return
+	}
+
+	stateCookie, err := r.Cookie(oidcStateCookieName)
+	if err != nil || stateCookie.Value == "" || stateCookie.Value != q.Get("state") {
+		http.Error(w, `{"error":"invalid state"}`, http.StatusBadRequest)
+		return
+	}
+
+	code := q.Get("code")
+	if code == "" {
+		http.Error(w, `{"error":"missing authorization code"}`, http.StatusBadRequest)
+		return
+	}
+
+	token, err := a.oauth2Config.Exchange(ctx, code)
+	if err != nil {
+		klog.Errorf("OIDC code exchange failed: %v", err)
+		http.Error(w, `{"error":"code exchange failed"}`, http.StatusBadGateway)
+		return
+	}
+
+	rawIDToken, _ := token.Extra("id_token").(string)
+	if rawIDToken == "" {
+		http.Error(w, `{"error":"missing id_token"}`, http.StatusBadGateway)
+		return
+	}
+
+	idToken, err := a.oidcVerifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		klog.Errorf("OIDC id_token verification failed: %v", err)
+		http.Error(w, `{"error":"id_token verification failed"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var claims struct {
+		Sub   string `json:"sub"`
+		Email string `json:"email"`
+		Name  string `json:"name"`
+		Nonce string `json:"nonce"`
+	}
+	if err := idToken.Claims(&claims); err != nil {
+		http.Error(w, `{"error":"failed to parse id_token claims"}`, http.StatusBadGateway)
+		return
+	}
+
+	nonceCookie, err := r.Cookie(oidcNonceCookieName)
+	if err != nil || claims.Nonce == "" || nonceCookie.Value != claims.Nonce {
+		http.Error(w, `{"error":"invalid nonce"}`, http.StatusBadRequest)
+		return
+	}
+
+	user := &UserInfo{
+		ID:    claims.Sub,
+		Name:  claims.Name,
+		Email: claims.Email,
+		Role:  "admin",
+	}
+
+	if err := a.setSessionCookie(w, user); err != nil {
+		klog.Errorf("Failed to set session cookie: %v", err)
+		http.Error(w, `{"error":"failed to create session"}`, http.StatusInternalServerError)
+		return
+	}
+
+	clearCookie(w, oidcStateCookieName)
+	clearCookie(w, oidcNonceCookieName)
+
+	returnTo := "/"
+	if rt, err := r.Cookie(oidcReturnToCookieName); err == nil &&
+		strings.HasPrefix(rt.Value, "/") {
+		returnTo = rt.Value
+		clearCookie(w, oidcReturnToCookieName)
+	}
+
+	http.Redirect(w, r, returnTo, http.StatusFound)
 }
 
 // handleUserInfo returns the current authenticated user's info.
@@ -401,6 +533,41 @@ func (a *AuthMiddleware) sign(data []byte) []byte {
 func (a *AuthMiddleware) verify(data, signature []byte) bool {
 	expected := a.sign(data)
 	return hmac.Equal(expected, signature)
+}
+
+// randomString returns a base64url-encoded cryptographically random string.
+// n is the number of random bytes; the output is longer due to base64 encoding.
+func randomString(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// setTempCookie writes a short-lived HttpOnly cookie used for OIDC state /
+// nonce / return-to bookkeeping during the redirect dance.
+func setTempCookie(w http.ResponseWriter, name, value string, ttl time.Duration) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   int(ttl.Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// clearCookie expires a cookie immediately.
+func clearCookie(w http.ResponseWriter, name string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 // writeJSON is a helper to write a JSON response with the given status code.

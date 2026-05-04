@@ -88,10 +88,15 @@ func New(cfg *config.Config) *Server {
 		BasicPassword:    cfg.BasicPassword,
 	}
 
+	auth, err := middleware.NewAuthMiddleware(authCfg)
+	if err != nil {
+		klog.Fatalf("Failed to construct auth middleware: %v", err)
+	}
+
 	return &Server{
 		store:      s,
 		cfg:        cfg,
-		auth:       middleware.NewAuthMiddleware(authCfg),
+		auth:       auth,
 		mysqlStore: mysqlStore,
 	}
 }
