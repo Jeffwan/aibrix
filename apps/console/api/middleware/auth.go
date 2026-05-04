@@ -76,12 +76,34 @@ type contextKey string
 // UserContextKey is the context key for storing UserInfo.
 const UserContextKey contextKey = "user"
 
+// IDTokenContextKey is the context key for storing the raw OIDC ID token
+// associated with the current session, when available. Consumers (e.g. the
+// SSO single-logout handler) can retrieve it via GetIDToken.
+const IDTokenContextKey contextKey = "id_token"
+
 // GetUser extracts UserInfo from the request context.
 func GetUser(ctx context.Context) *UserInfo {
 	if u, ok := ctx.Value(UserContextKey).(*UserInfo); ok {
 		return u
 	}
 	return nil
+}
+
+// GetIDToken returns the raw OIDC ID token attached to the request context,
+// or the empty string if there is none (basic / dev modes, or no session).
+func GetIDToken(ctx context.Context) string {
+	if t, ok := ctx.Value(IDTokenContextKey).(string); ok {
+		return t
+	}
+	return ""
+}
+
+// sessionPayload is the JSON-serialized envelope stored in the session cookie.
+// Versioned-friendly via additive fields; unknown fields are ignored on read.
+type sessionPayload struct {
+	User    UserInfo `json:"user"`
+	Exp     int64    `json:"exp"`
+	IDToken string   `json:"id_token,omitempty"`
 }
 
 // AuthMiddleware provides authentication for HTTP handlers.
@@ -169,12 +191,16 @@ func (a *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 
 		case authModeBasic, authModeOIDC:
-			user, err := a.getUserFromSession(r)
+			sp, err := a.getSessionFromRequest(r)
 			if err != nil {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
-			ctx := context.WithValue(r.Context(), UserContextKey, user)
+			user := sp.User
+			ctx := context.WithValue(r.Context(), UserContextKey, &user)
+			if sp.IDToken != "" {
+				ctx = context.WithValue(ctx, IDTokenContextKey, sp.IDToken)
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 
 		default:
@@ -274,7 +300,7 @@ func (a *AuthMiddleware) handleLoginPost(
 		Role:  "admin",
 	}
 
-	if err := a.setSessionCookie(w, user); err != nil {
+	if err := a.setSessionCookie(w, r, user, ""); err != nil {
 		klog.Errorf("Failed to set session cookie: %v", err)
 		http.Error(w,
 			`{"error":"failed to create session"}`,
@@ -313,11 +339,11 @@ func (a *AuthMiddleware) handleOIDCLogin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	setTempCookie(w, oidcStateCookieName, state, oidcTempCookieMaxAge)
-	setTempCookie(w, oidcNonceCookieName, nonce, oidcTempCookieMaxAge)
+	setTempCookie(w, r, oidcStateCookieName, state, oidcTempCookieMaxAge)
+	setTempCookie(w, r, oidcNonceCookieName, nonce, oidcTempCookieMaxAge)
 
 	if returnTo := r.URL.Query().Get("return"); returnTo != "" && strings.HasPrefix(returnTo, "/") {
-		setTempCookie(w, oidcReturnToCookieName, returnTo, oidcTempCookieMaxAge)
+		setTempCookie(w, r, oidcReturnToCookieName, returnTo, oidcTempCookieMaxAge)
 	}
 
 	authURL := a.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce))
@@ -396,20 +422,20 @@ func (a *AuthMiddleware) handleOIDCCallback(w http.ResponseWriter, r *http.Reque
 		Role:  "admin",
 	}
 
-	if err := a.setSessionCookie(w, user); err != nil {
+	if err := a.setSessionCookie(w, r, user, rawIDToken); err != nil {
 		klog.Errorf("Failed to set session cookie: %v", err)
 		http.Error(w, `{"error":"failed to create session"}`, http.StatusInternalServerError)
 		return
 	}
 
-	clearCookie(w, oidcStateCookieName)
-	clearCookie(w, oidcNonceCookieName)
+	clearCookie(w, r, oidcStateCookieName)
+	clearCookie(w, r, oidcNonceCookieName)
 
 	returnTo := "/"
 	if rt, err := r.Cookie(oidcReturnToCookieName); err == nil &&
 		strings.HasPrefix(rt.Value, "/") {
 		returnTo = rt.Value
-		clearCookie(w, oidcReturnToCookieName)
+		clearCookie(w, r, oidcReturnToCookieName)
 	}
 
 	http.Redirect(w, r, returnTo, http.StatusFound)
@@ -449,14 +475,7 @@ func (a *AuthMiddleware) handleUserInfo(
 func (a *AuthMiddleware) handleLogout(
 	w http.ResponseWriter, r *http.Request, _ map[string]string,
 ) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	clearCookie(w, r, sessionCookieName)
 	writeJSON(w, http.StatusOK, map[string]string{
 		"message": "logged out",
 	})
@@ -464,11 +483,21 @@ func (a *AuthMiddleware) handleLogout(
 
 // --- Session management using signed cookies ---
 
-// setSessionCookie creates a signed session cookie containing the user info.
-func (a *AuthMiddleware) setSessionCookie(w http.ResponseWriter, user *UserInfo) error {
-	payload, err := json.Marshal(user)
+// setSessionCookie creates a signed session cookie containing the user info,
+// an absolute expiry, and (optionally) the raw ID token used for SSO logout.
+// The Secure flag is set when the request is HTTPS (or proxied as such).
+func (a *AuthMiddleware) setSessionCookie(
+	w http.ResponseWriter, r *http.Request, user *UserInfo, idToken string,
+) error {
+	exp := time.Now().Add(sessionMaxAge)
+	sp := sessionPayload{
+		User:    *user,
+		Exp:     exp.Unix(),
+		IDToken: idToken,
+	}
+	payload, err := json.Marshal(sp)
 	if err != nil {
-		return fmt.Errorf("marshal user: %w", err)
+		return fmt.Errorf("marshal session: %w", err)
 	}
 
 	sig := a.sign(payload)
@@ -483,13 +512,17 @@ func (a *AuthMiddleware) setSessionCookie(w http.ResponseWriter, user *UserInfo)
 		Path:     "/",
 		MaxAge:   int(sessionMaxAge.Seconds()),
 		HttpOnly: true,
+		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	return nil
 }
 
-// getUserFromSession validates the session cookie and returns the user info.
-func (a *AuthMiddleware) getUserFromSession(r *http.Request) (*UserInfo, error) {
+// getSessionFromRequest validates the session cookie and returns the parsed
+// payload. It enforces the absolute expiry encoded in the payload so a
+// captured cookie value cannot outlive its issued lifetime even if the
+// browser-side MaxAge is bypassed.
+func (a *AuthMiddleware) getSessionFromRequest(r *http.Request) (*sessionPayload, error) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return nil, fmt.Errorf("no session cookie: %w", err)
@@ -514,11 +547,26 @@ func (a *AuthMiddleware) getUserFromSession(r *http.Request) (*UserInfo, error) 
 		return nil, fmt.Errorf("invalid session signature")
 	}
 
-	var user UserInfo
-	if err := json.Unmarshal(payload, &user); err != nil {
-		return nil, fmt.Errorf("unmarshal user: %w", err)
+	var sp sessionPayload
+	if err := json.Unmarshal(payload, &sp); err != nil {
+		return nil, fmt.Errorf("unmarshal session: %w", err)
 	}
 
+	if sp.Exp == 0 || time.Now().Unix() > sp.Exp {
+		return nil, fmt.Errorf("session expired")
+	}
+
+	return &sp, nil
+}
+
+// getUserFromSession is a thin wrapper kept for callers that only need the
+// UserInfo portion of the session.
+func (a *AuthMiddleware) getUserFromSession(r *http.Request) (*UserInfo, error) {
+	sp, err := a.getSessionFromRequest(r)
+	if err != nil {
+		return nil, err
+	}
+	user := sp.User
 	return &user, nil
 }
 
@@ -547,27 +595,41 @@ func randomString(n int) (string, error) {
 
 // setTempCookie writes a short-lived HttpOnly cookie used for OIDC state /
 // nonce / return-to bookkeeping during the redirect dance.
-func setTempCookie(w http.ResponseWriter, name, value string, ttl time.Duration) {
+func setTempCookie(w http.ResponseWriter, r *http.Request, name, value string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     "/",
 		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
+		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 // clearCookie expires a cookie immediately.
-func clearCookie(w http.ResponseWriter, name string) {
+func clearCookie(w http.ResponseWriter, r *http.Request, name string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// isHTTPS reports whether the request was served over TLS, either directly
+// or behind a reverse proxy that sets X-Forwarded-Proto.
+func isHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // writeJSON is a helper to write a JSON response with the given status code.
