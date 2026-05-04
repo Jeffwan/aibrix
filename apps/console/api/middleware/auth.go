@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -50,16 +51,17 @@ const (
 
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
-	Mode             string // "dev", "oidc", "basic"
-	OIDCIssuerURL    string
-	OIDCClientID     string
-	OIDCClientSecret string
-	OIDCRedirectURL  string
-	SessionSecret    string
-	DevUserName      string
-	DevUserEmail     string
-	BasicUsername    string
-	BasicPassword    string
+	Mode                      string // "dev", "oidc", "basic"
+	OIDCIssuerURL             string
+	OIDCClientID              string
+	OIDCClientSecret          string
+	OIDCRedirectURL           string
+	OIDCPostLogoutRedirectURL string
+	SessionSecret             string
+	DevUserName               string
+	DevUserEmail              string
+	BasicUsername             string
+	BasicPassword             string
 }
 
 // UserInfo represents an authenticated user.
@@ -111,9 +113,10 @@ type AuthMiddleware struct {
 	config AuthConfig
 
 	// OIDC components, populated only when Mode == "oidc".
-	oidcProvider *oidc.Provider
-	oidcVerifier *oidc.IDTokenVerifier
-	oauth2Config *oauth2.Config
+	oidcProvider       *oidc.Provider
+	oidcVerifier       *oidc.IDTokenVerifier
+	oauth2Config       *oauth2.Config
+	oidcEndSessionURL  string // discovered end_session_endpoint, may be empty
 }
 
 // NewAuthMiddleware creates a new AuthMiddleware with the given configuration.
@@ -147,6 +150,16 @@ func NewAuthMiddleware(cfg AuthConfig) (*AuthMiddleware, error) {
 			RedirectURL:  cfg.OIDCRedirectURL,
 			Endpoint:     provider.Endpoint(),
 			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		}
+
+		// end_session_endpoint is not on oidc.Provider directly; pull it
+		// out of the discovery document via Claims. Optional per RP-Initiated
+		// Logout spec, so absence is not fatal.
+		var disc struct {
+			EndSessionEndpoint string `json:"end_session_endpoint"`
+		}
+		if err := provider.Claims(&disc); err == nil {
+			a.oidcEndSessionURL = disc.EndSessionEndpoint
 		}
 	}
 
@@ -471,14 +484,43 @@ func (a *AuthMiddleware) handleUserInfo(
 	_ = json.NewEncoder(w).Encode(user)
 }
 
-// handleLogout clears the session cookie.
+// handleLogout clears the local session and, in OIDC mode with a known
+// end_session_endpoint, returns the URL the frontend should navigate to in
+// order to terminate the SSO session at the provider (RP-Initiated Logout).
+//
+// We deliberately do not 302 here: the endpoint is invoked via fetch from
+// the SPA, which cannot follow a cross-origin redirect to the IdP. Returning
+// the URL lets the caller do `window.location = redirect_url`.
 func (a *AuthMiddleware) handleLogout(
 	w http.ResponseWriter, r *http.Request, _ map[string]string,
 ) {
+	// Snapshot the session before clearing so we still have the id_token
+	// available for id_token_hint below.
+	sp, _ := a.getSessionFromRequest(r)
 	clearCookie(w, r, sessionCookieName)
-	writeJSON(w, http.StatusOK, map[string]string{
-		"message": "logged out",
-	})
+
+	resp := map[string]string{"message": "logged out"}
+
+	if a.config.Mode == authModeOIDC && a.oidcEndSessionURL != "" && sp != nil && sp.IDToken != "" {
+		u, err := url.Parse(a.oidcEndSessionURL)
+		if err == nil {
+			q := u.Query()
+			q.Set("id_token_hint", sp.IDToken)
+			q.Set("client_id", a.config.OIDCClientID)
+			if a.config.OIDCPostLogoutRedirectURL != "" {
+				q.Set("post_logout_redirect_uri", a.config.OIDCPostLogoutRedirectURL)
+			}
+			if state, err := randomString(16); err == nil {
+				q.Set("state", state)
+			}
+			u.RawQuery = q.Encode()
+			resp["redirect_url"] = u.String()
+		} else {
+			klog.Warningf("invalid end_session_endpoint %q: %v", a.oidcEndSessionURL, err)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // --- Session management using signed cookies ---

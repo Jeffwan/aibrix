@@ -76,16 +76,17 @@ func New(cfg *config.Config) *Server {
 	}
 
 	authCfg := middleware.AuthConfig{
-		Mode:             cfg.AuthMode,
-		OIDCIssuerURL:    cfg.OIDCIssuerURL,
-		OIDCClientID:     cfg.OIDCClientID,
-		OIDCClientSecret: cfg.OIDCClientSecret,
-		OIDCRedirectURL:  cfg.OIDCRedirectURL,
-		SessionSecret:    cfg.SessionSecret,
-		DevUserName:      cfg.DevUserName,
-		DevUserEmail:     cfg.DevUserEmail,
-		BasicUsername:    cfg.BasicUsername,
-		BasicPassword:    cfg.BasicPassword,
+		Mode:                      cfg.AuthMode,
+		OIDCIssuerURL:             cfg.OIDCIssuerURL,
+		OIDCClientID:              cfg.OIDCClientID,
+		OIDCClientSecret:          cfg.OIDCClientSecret,
+		OIDCRedirectURL:           cfg.OIDCRedirectURL,
+		OIDCPostLogoutRedirectURL: cfg.OIDCPostLogoutRedirectURL,
+		SessionSecret:             cfg.SessionSecret,
+		DevUserName:               cfg.DevUserName,
+		DevUserEmail:              cfg.DevUserEmail,
+		BasicUsername:             cfg.BasicUsername,
+		BasicPassword:             cfg.BasicPassword,
 	}
 
 	auth, err := middleware.NewAuthMiddleware(authCfg)
