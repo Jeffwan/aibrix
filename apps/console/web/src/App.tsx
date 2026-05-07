@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Navigate,
   Route,
@@ -7,6 +7,7 @@ import {
   useNavigate,
   useParams,
 } from 'react-router-dom';
+import { checkAuth, redirectToOIDCLogin } from './utils/auth';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { BatchJobsList } from './components/BatchJobsList';
@@ -176,10 +177,41 @@ export default function App() {
   const navigate = useNavigate();
   const [toast, setToast] = useState<{ message: string; subtitle?: string } | null>(null);
 
+  // Bootstrap auth before rendering protected UI. Without this, the SPA
+  // hits /api/v1/auth/userinfo (which is in NO_AUTO_REDIRECT_PREFIXES so
+  // the api.ts 401 handler can't kick the OIDC flow) and other components'
+  // calls 401 too — but cachedAuthMode is still null so those 401s also
+  // don't redirect. Result: a stuck "unauthorized" landing.
+  const [authReady, setAuthReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    checkAuth().then(({ user, mode }) => {
+      if (cancelled) return;
+      if (mode === 'oidc' && !user) {
+        redirectToOIDCLogin();   // navigates away; never sets authReady
+        return;
+      }
+      setAuthReady(true);
+    }).catch(() => {
+      // Network / config endpoint failure: render anyway and let downstream
+      // calls surface the real error rather than freezing on a blank page.
+      if (!cancelled) setAuthReady(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const showToast = (message: string, subtitle?: string) => {
     setToast({ message, subtitle });
     setTimeout(() => setToast(null), 3000);
   };
+
+  if (!authReady) {
+    return (
+      <div className="flex h-screen items-center justify-center text-gray-500 text-sm">
+        Signing you in…
+      </div>
+    );
+  }
 
   // Settings has its own sidebar; settings tab comes from URL.
   const isSettings = location.pathname.startsWith('/settings');
