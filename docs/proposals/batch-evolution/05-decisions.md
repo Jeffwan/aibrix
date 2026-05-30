@@ -5,15 +5,16 @@
 
 ---
 
-## 总框架:两根支柱
+## 总框架:主轴是 Sourcing × Throughput(Isolation 已降级)
 
-便宜的 batch = **便宜的专属算力 (Sourcing)** + **便宜的共享算力 (Isolation)**。
+便宜的 batch 主要靠 **便宜的算力 (Sourcing)** × **更高的吞吐 (Throughput)**:
 
-- **Sourcing** —— 把活跑在最便宜的算力上:neocloud → spot/跨区 → 异构/offload。
-- **Isolation** —— 安全地和在线共享算力:online↔offline 隔离*保障* → 收割 (harvesting)。
+- **Sourcing** —— 把活跑在最便宜的算力上:neocloud → spot/跨区 → 异构/offload(家族 D + C)。
+- **Throughput** —— 同硬件产出更多 token:整批 prefix 共享 + 资源混排(家族 A)。
+- **(可选,已降级)Isolation** —— 和在线共享算力(收割,家族 B):**生产上混步又难又不安全,降为最低优先、可能不做**(决策 D-E)。
 
-**v0.7.0 先打 Sourcing 的地基**(低风险、立竿见影、且是后续一切的底座);**Isolation 作为关键研究赌注**并行推进,
-其交付物是"机制 + 有界的在线影响",而不是急于把 harvesting 做成 feature。
+**v0.7.0 先打 Sourcing 的地基(P0:重构 + neocloud)**;近期主攻 **D(spot/跨云)与 A(吞吐)**;
+异构/offload(C)随后;**共置(B)排到最后、可选**。北极星不再以"收割"为前提。
 
 ---
 
@@ -35,16 +36,15 @@
 
 ---
 
-## D-B — colocation 单模型,但**不作近期重点**;**isolation 保障 = 研究重点**
+## D-B / D-E — colocation(家族 B)**降级:单模型、最低优先、可能不做**
 
-- **结论**:colocation 若做,走**单模型**;但它**风险最高、近期可落地性最低,不作为重点**。真正值得投入研究的是
-  **online↔offline 隔离保障——确保在线不被影响**。
-- **理由**:HyGen/ConServe/Valve 全部假设单模型单引擎,而 AIBrix 现实是多模型机队;且 harvesting 直接碰付费在线 SLO。
-  先把"在线不被伤害"的**保障**做扎实,harvesting 才配做成 feature。"有界的在线影响"也是比"我们会收割"更可信的卖点。
-- **被否决**:① 近期就上多模型 colocation(开放难题,过早);② 直接把 harvesting 当 v0.7.0/v0.8 头条 feature(没有隔离保障兜底)。
+- **结论(本轮修正,取代早先"isolation = 关键研究赌注"的说法)**:online↔offline 共置(隔离 + 收割)**降为最低优先级,排在异构/offload(C)之后,作为可选探索,最终完全可能不走这条路径**。若真要做,走**单模型**。
+- **理由**:**生产上在线/离线混步难度大、不安全**(碰付费在线 SLO);HyGen/ConServe/Valve 都假设单模型单引擎,而 AIBrix 现实是多模型机队;价值不确定。
+- **被否决**:① 把"隔离保障"当**关键研究赌注 / 与 v0.7.0 并行**(早先版本,已废);② 近期就上多模型 colocation;③ 把 harvesting 当近期头条 feature。
 - **影响**:
-  - roadmap 把家族 B 拆成 **"P1 隔离保障(研究)→ P4 harvesting(feature,门槛=P1 成立)"**。
-  - 隔离保障的技术内核 = Valve(联合有界抢占延迟+率、MIAD 显存、channel 隔离)+ ConServe(层级抢占);交付物 = **机制 + 可证/有界的在线影响**,用 `03` 的 W5 在线-trace 实验验"在线 p99 不受影响"。
+  - roadmap 中家族 B = **P5(最低优先 / 可选 / 可能不做)**,排在 C 之后;**其余里程碑不依赖它**。
+  - "便宜的共享算力"这条腿可砍;成本完全靠 **Sourcing(D spot/跨区 + C 异构/offload + neocloud)× Throughput(A)** 来打,这条线本身已足够强且生产安全。
+  - research 里对应的 #3(多模型隔离)**随之降为"可选 research",不再是主攻**(见 `07`)。
 
 ---
 
@@ -75,17 +75,16 @@
 
 ---
 
-## Feature 优先级(P0–P6,据上述决策定稿)
+## Feature 优先级(P0–P5,本轮重排后)
 
 | 优先级 | Feature / 故事 | 支柱 | 风险 | 何时 |
 |---|---|---|---|---|
 | **P0** | **可移植多 provider batch**:重构(MDS/planner/RM)+ 原生 neocloud launch(Lambda/RunPod)+ 定价/容量感知 planner(基础) | Sourcing | 低 | **v0.7.0 主线** |
-| **P1** | **online↔offline 隔离保障**(机制 + 有界在线影响,研究为主) | Isolation | 高(研究) | 并行研究,先于任何 harvesting |
-| **P2** | **成本感知 spot/跨 provider 放置**(SkyNomad 式 + 推理原生 checkpoint)—— **替代 SkyPilot 的差异化点** | Sourcing | 中 | P0 之后 |
-| **P3** | **batch 感知吞吐**(prefix 重排 + 资源混排) | — | 中低 | 任意时点的纯 $/token win |
-| **P4** | **harvesting 做成 feature**(单模型) | Isolation | 高 | **门槛 = P1 保障成立** |
-| **P5** | offload / 异构档位(CPU/attention 下沉、两层) | Sourcing | 中高 | later |
-| **P6** | workflow batch(新产品面) | — | 中 | later / 研究线 |
+| **P1** | **成本感知 spot/跨 provider 放置**(SkyNomad 式 + 推理原生 checkpoint)—— **替代 SkyPilot;你的重点之一** | Sourcing | 中 | P0 之后(v0.8) |
+| **P2** | **batch 感知吞吐**(prefix 重排 + 资源混排)—— **你的重点之一** | Throughput | 中低 | 任意时点的纯 $/token win |
+| **P3** | **异构 / offload 档位**(商用 GPU、CPU/attention 下沉、两层) | Sourcing | 中高 | v0.9 |
+| **P4** | **workflow batch**(新产品面) | — | 中 | later / 研究线 |
+| **P5** | **online↔offline 隔离与收割(单模型)** | (可选) | 高 + 生产不安全 | **最低优先 / 可能不做** |
 
 ---
 
@@ -93,7 +92,7 @@
 
 - **In**:重构 MDS/planner/RM;**原生 neocloud backend(Lambda/RunPod)**;定价/容量感知 planner(基础版);保持 OpenAI 兼容;成本计量;可观测(队列深度/JCT/$/1M tok)。
 - **Out(明确不在 v0.7.0)**:harvesting/colocation、prefix 重排、spot/跨区、offload、workflow——这些是 what's-next。
-- **并行(研究,不一定随 v0.7.0 发)**:online↔offline 隔离保障 (P1)。
+- **降级 / 可能不做**:online↔offline 隔离与收割(家族 B,原"并行研究"提法已废)——见 D-B/D-E,排到 C 之后、可选。
 - **一句话**:*v0.7.0 = "AIBrix 成为云原生 batch 的入口,能在最便宜的(neo)云上跑 OpenAI 兼容的 batch,不依赖 SkyPilot。"*
 
 ---
@@ -103,5 +102,5 @@
 | # | 议题 | 结论 |
 |---|---|---|
 | M1 | P0 的 neocloud 范围 | v0.7.0 先做 **Lambda + RunPod**,其余 provider 后续按需扩;resource manager 是**共享层**,在线服务以后可复用同一套 backend,但 v0.7.0 叙事**以 batch 为主**。 |
-| M2 | P1 隔离保障的落版 | 作为**并行研究 workstream**,目标 **v0.8 落地**,并作为 **P4 harvesting 的开关**(P1 不达标则 harvesting 不发)。 |
-| M3 | P0–P6 次序 | 维持现序:**P2(spot / 替代 SkyPilot)排在 P3/P4 之前**——它是差异化点,且直接长在 P0 的"定价/容量感知 planner"上;**P3(吞吐)可在任意时点并行插入**。 |
+| M2 | 共置/隔离的落版 | **已降级(见 D-B/D-E)**:不再"与 v0.7.0 并行 / v0.8 落地";排到 C 之后作为可选 **P5**,可能不做。 |
+| M3 | P0–P5 次序(本轮重排) | Sourcing 优先:**D(spot)=P1、A(吞吐)=P2、C(异构)=P3、E(workflow)=P4、B(共置)=P5 可选**。A 可任意时点并行插入。 |
