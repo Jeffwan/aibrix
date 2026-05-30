@@ -95,3 +95,13 @@
 - **Out(明确不在 v0.7.0)**:harvesting/colocation、prefix 重排、spot/跨区、offload、workflow——这些是 what's-next。
 - **并行(研究,不一定随 v0.7.0 发)**:online↔offline 隔离保障 (P1)。
 - **一句话**:*v0.7.0 = "AIBrix 成为云原生 batch 的入口,能在最便宜的(neo)云上跑 OpenAI 兼容的 batch,不依赖 SkyPilot。"*
+
+---
+
+## 次要决策(已定)
+
+| # | 议题 | 结论 |
+|---|---|---|
+| M1 | P0 的 neocloud 范围 | v0.7.0 先做 **Lambda + RunPod**,其余 provider 后续按需扩;resource manager 是**共享层**,在线服务以后可复用同一套 backend,但 v0.7.0 叙事**以 batch 为主**。 |
+| M2 | P1 隔离保障的落版 | 作为**并行研究 workstream**,目标 **v0.8 落地**,并作为 **P4 harvesting 的开关**(P1 不达标则 harvesting 不发)。 |
+| M3 | P0–P6 次序 | 维持现序:**P2(spot / 替代 SkyPilot)排在 P3/P4 之前**——它是差异化点,且直接长在 P0 的"定价/容量感知 planner"上;**P3(吞吐)可在任意时点并行插入**。 |
