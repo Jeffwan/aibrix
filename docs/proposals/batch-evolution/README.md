@@ -32,6 +32,8 @@ P/D 解耦 StormService、KVCache V1 connector、负载感知路由、autoscaler
 | [`03-experiments.md`](./03-experiments.md) | ③ **实验与验证方法**:指标 / 基线 / 负载 / A-B 协议 / 成本模型 / SkyPilot bake-off | 中文 |
 | [`04-v0.7.0-prfaq-blog.md`](./04-v0.7.0-prfaq-blog.md) | ④ **v0.7.0 batch 单独发布**的 PRFAQ + blog 草稿 + 分阶段上市 | English |
 | **[`05-decisions.md`](./05-decisions.md)** | **决策日志(A/B/C/D 拍板结论 + 理由 + 被否决项 + P0–P6 优先级)。02/04 以此为准。** | 中文 |
+| [`06-north-star-prfaq-blog.md`](./06-north-star-prfaq-blog.md) | 北极星(全部 P0–P6 落地后)的 PRFAQ + blog,以 **cost-SLO** 为主线;v1.0 叙事 | English |
+| [`07-research-paper-ideas.md`](./07-research-paper-ideas.md) | 从实现沉淀 **research paper**:5 角度 novelty 验证 + 推荐论文组合(C/B/A)+ 必引文献 + 风险登记册 | 中文 |
 
 > **方向已拍板(见 `05-decisions.md`)**:v0.7.0 = **架构重构(MDS/planner/RM)+ 原生 neocloud provisioning(Lambda/RunPod)**,
 > 定位为**云原生 batch 的入口、替代 SkyPilot**;batch 高级 feature(吞吐/收割/spot/workflow)是 what's-next。
