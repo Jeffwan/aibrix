@@ -1,0 +1,36 @@
+# A ModelClaim attaches to a warm GPU pool: an ordinary Deployment of
+# pre-warmed GPU-host pods labelled `pool.aibrix.ai/name: <pool>` and
+# `pool.aibrix.ai/enabled: "true"`. The controller bin-packs this model onto a
+# pod with spare HBM weight capacity and serves it as its own engine process,
+# sharing the pod's elastic KV cache (kvcached) with other ModelClaims.
+apiVersion: model.aibrix.ai/v1alpha1
+kind: ModelClaim
+metadata:
+  labels:
+    app.kubernetes.io/name: aibrix
+    app.kubernetes.io/managed-by: kustomize
+  name: qwen2-7b-sample
+spec:
+  # Served model name clients address; defaults to metadata.name when omitted.
+  modelName: qwen2-7b-instruct
+  # Select the warm GPU pool to attach to.
+  poolSelector:
+    matchLabels:
+      pool.aibrix.ai/name: b300-pool-a
+  artifactURL: huggingface://Qwen/Qwen2-7B-Instruct
+  engine: vllm
+  # Hint used to bin-pack onto a pod with enough free HBM for the weights.
+  weightSize: 16Gi
+  replicas: 1
+  # Priority orders KV reclaim / weight eviction under memory pressure
+  # (higher = more protected; lower is reclaimed/evicted first).
+  priority: 100
+  # KV-cache sharing semantics on the shared GPU (elastic resource manager):
+  #   Guaranteed = protected floor (min) + burst into the shared pool up to max
+  #   Shared     = fully elastic, reclaimable
+  #   Exclusive  = hard partition (min == max, no borrow)
+  kv:
+    policy: Guaranteed
+    min: 2Gi
+    max: 8Gi
+    shares: 2
