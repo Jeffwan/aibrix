@@ -149,9 +149,9 @@ const (
 	ModelClaimActivating ModelClaimPhase = "Activating"
 	// ModelClaimActive means the model is serving on at least one warm pod.
 	ModelClaimActive ModelClaimPhase = "Active"
-	// ModelClaimSleeping means the engine is not currently routable because it
-	// was intentionally parked by the runtime (for example due to pressure). The
-	// claim remains desired and can be woken by the controller/runtime.
+	// ModelClaimSleeping means the engine is not currently routable because the
+	// runtime put it into a sleep state, usually as a pressure response. The claim
+	// remains desired and can be woken by the controller/runtime.
 	ModelClaimSleeping ModelClaimPhase = "Sleeping"
 	// ModelClaimEvicted means the model's weights were demoted out of HBM under
 	// memory pressure (LRU); reactivation reloads from the tier cache.
