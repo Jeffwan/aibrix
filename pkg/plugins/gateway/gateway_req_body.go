@@ -73,7 +73,7 @@ func (s *Server) HandleRequestBody(ctx context.Context, routingCtx *types.Routin
 
 	// early reject if model doesn't exist or no pods are ready
 	var podsArr types.PodList
-	podsArr, errRes = s.validateModelAvailability(requestID, model)
+	podsArr, errRes = s.validateModelAvailability(ctx, requestID, model)
 	if errRes != nil {
 		return errRes, model, stream, term
 	}
@@ -207,13 +207,21 @@ func getEngineBasedPathRewrite(requestPath string, pods []*v1.Pod) string {
 
 // validateModelAvailability checks that the model exists in cache and has routable pods.
 // Returns the pod list and nil on success, or nil and an error response on failure.
-func (s *Server) validateModelAvailability(requestID, model string) (types.PodList, *extProcPb.ProcessingResponse) {
+func (s *Server) validateModelAvailability(ctx context.Context, requestID, model string) (types.PodList, *extProcPb.ProcessingResponse) {
 	if !s.cache.HasModel(model) {
-		klog.ErrorS(nil, "model doesn't exist in cache, probably wrong model name", "requestID", requestID, "model", model)
-		return nil, generateErrorResponse(envoyTypePb.StatusCode_BadRequest,
-			[]*configPb.HeaderValueOption{{Header: &configPb.HeaderValue{
-				Key: HeaderErrorNoModelBackends, RawValue: []byte(model)}}},
-			fmt.Sprintf("model %s does not exist", model), ErrorCodeModelNotFound, "model")
+		if s.cache.IsModelClaimNotRoutable(model) {
+			klog.V(4).InfoS("request hit non-routable ModelClaim, holding for readiness", "requestID", requestID, "model", model)
+			if !s.hold.waitUntilRoutable(ctx, s.cache, model) {
+				return nil, ModelClaimNotReadyResponse(model)
+			}
+			klog.InfoS("ModelClaim became routable within hold budget, forwarding", "requestID", requestID, "model", model)
+		} else {
+			klog.ErrorS(nil, "model doesn't exist in cache, probably wrong model name", "requestID", requestID, "model", model)
+			return nil, generateErrorResponse(envoyTypePb.StatusCode_BadRequest,
+				[]*configPb.HeaderValueOption{{Header: &configPb.HeaderValue{
+					Key: HeaderErrorNoModelBackends, RawValue: []byte(model)}}},
+				fmt.Sprintf("model %s does not exist", model), ErrorCodeModelNotFound, "model")
+		}
 	}
 
 	podsArr, err := s.cache.ListPodsByModel(model)

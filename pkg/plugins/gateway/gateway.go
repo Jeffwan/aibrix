@@ -78,6 +78,7 @@ type Server struct {
 	gatewayClient       gatewayapi.Interface
 	requestCountTracker map[string]int
 	cache               cache.Cache
+	hold                *holdGate
 	httpServer          *http.Server
 	httprouteCache      sync.Map
 	httprouteCacheTTL   time.Duration
@@ -149,6 +150,7 @@ func NewServer(redisClient *redis.Client, client kubernetes.Interface, gatewayCl
 		httprouteCacheTTL:   httpRouteCacheTTL(),
 		shutdownCh:          shutdown,
 		shutdown:            shutdown,
+		hold:                newHoldGate(),
 	}
 }
 

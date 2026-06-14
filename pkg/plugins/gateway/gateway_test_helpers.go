@@ -58,13 +58,28 @@ func (m *MockCache) HasModel(model string) bool {
 }
 
 func (m *MockCache) IsModelClaim(model string) bool {
+	if !hasMockExpectation(m, "IsModelClaim") {
+		return false
+	}
 	args := m.Called(model)
 	return args.Bool(0)
 }
 
 func (m *MockCache) IsModelClaimNotRoutable(model string) bool {
+	if !hasMockExpectation(m, "IsModelClaimNotRoutable") {
+		return false
+	}
 	args := m.Called(model)
 	return args.Bool(0)
+}
+
+func hasMockExpectation(m *MockCache, method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *MockCache) ListPodsByModel(model string) (types.PodList, error) {
