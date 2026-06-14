@@ -1,0 +1,40 @@
+apiVersion: model.aibrix.ai/v1alpha1
+kind: ModelClaim
+metadata:
+  name: qwen3-0-6b
+  namespace: default
+spec:
+  modelName: qwen3-0.6b
+  poolSelector:
+    matchLabels:
+      pool.aibrix.ai/name: b300-pool-a
+  artifactURL: huggingface://Qwen/Qwen3-0.6B
+  engine: vllm
+  weightSize: 2Gi
+  replicas: 1
+  priority: 100
+  kv:
+    policy: Guaranteed
+    min: 1Gi
+    max: 8Gi
+    shares: 2
+---
+apiVersion: model.aibrix.ai/v1alpha1
+kind: ModelClaim
+metadata:
+  name: qwen25-0-5b
+  namespace: default
+spec:
+  modelName: qwen2.5-0.5b
+  poolSelector:
+    matchLabels:
+      pool.aibrix.ai/name: b300-pool-a
+  artifactURL: huggingface://Qwen/Qwen2.5-0.5B-Instruct
+  engine: vllm
+  weightSize: 2Gi
+  replicas: 1
+  priority: 10
+  kv:
+    policy: Shared
+    max: 8Gi
+    shares: 1
