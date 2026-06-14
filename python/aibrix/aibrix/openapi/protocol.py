@@ -111,3 +111,80 @@ class UnloadLoraAdapterRuntimeRequest(NoExtraBaseModel):
     cleanup_local: bool = Field(
         default=True, description="Whether to delete local artifact files"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Runtime model lifecycle protocol (engine <-> control-plane co-design)
+# --------------------------------------------------------------------------- #
+class ActivateRuntimeModelRequest(NoProtectedBaseModel):
+    """Bring a model online as its own kvcached-enabled engine process."""
+
+    model_name: str
+    artifact_url: str
+    engine: str = "vllm"
+    port: int = Field(default=0, description="0 lets the agent pick a free port")
+    ipc_name: Optional[str] = Field(
+        default=None,
+        description="kvcached KVCACHED_IPC_NAME; agent derives one if empty",
+    )
+    kv_min_bytes: int = 0
+    kv_max_bytes: int = 0
+    # KV-sharing semantics (mirror the CRD's Spec.KV / Spec.Priority). The agent
+    # stores them per instance so the node-level reclaim loop can rebuild each
+    # model's kv_reclaim.ModelDemand without reading CRDs.
+    kv_policy: str = "Guaranteed"  # "Exclusive" | "Shared" | "Guaranteed"
+    kv_shares: int = 1
+    priority: int = 0
+    credentials: Optional[Dict[str, str]] = None
+    additional_config: Optional[Dict[str, str]] = None
+
+
+class ActivateRuntimeModelResponse(NoProtectedBaseModel):
+    status: str  # "success" | "error"
+    model_name: str
+    port: int = 0
+    ipc_name: str = ""
+    message: Optional[str] = None
+
+
+class DeactivateRuntimeModelRequest(NoProtectedBaseModel):
+    """Tear a model down: warm (release KV), evict (sleep weights), or stop."""
+
+    model_name: str
+    mode: str = "stop"  # "warm" | "evict" | "stop"
+    sleep_level: int = 1
+
+
+class SetKVBudgetRequest(NoProtectedBaseModel):
+    """Set a model's kvcached KV budget ceiling/floor (the reclaim actuator)."""
+
+    model_name: str
+    kv_max_bytes: int
+    kv_min_bytes: int = 0
+
+
+class RuntimeModelInfo(NoProtectedBaseModel):
+    model_name: str
+    port: int
+    ipc_name: str
+    phase: str
+    # Whether the engine can serve right now (a /health probe). The controller
+    # gates routability on this: a model's warm-pod annotation stays at the
+    # non-routable marker (port 0) until ready, so requests never hit a
+    # still-booting engine.
+    ready: bool = False
+    # KV accounting + sharing semantics, consumed by the node-level reclaim loop
+    # (which rebuilds kv_reclaim.ModelDemand from this listing). kv_used/total
+    # come from the model's kvcached /dev/shm MemInfoStruct and are zero when
+    # the segment is absent (mock engine, or engine still starting).
+    kv_min_bytes: int = 0
+    kv_max_bytes: int = 0
+    kv_used_bytes: int = 0
+    kv_total_bytes: int = 0
+    kv_policy: str = "Guaranteed"
+    kv_shares: int = 1
+    priority: int = 0
+
+
+class ListRuntimeModelsResponse(NoProtectedBaseModel):
+    models: List[RuntimeModelInfo]
