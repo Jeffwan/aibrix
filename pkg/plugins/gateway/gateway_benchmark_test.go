@@ -222,6 +222,8 @@ type benchStubCache struct {
 }
 
 func (c *benchStubCache) HasModel(_ string) bool                                     { return true }
+func (c *benchStubCache) IsModelClaim(_ string) bool                                 { return false }
+func (c *benchStubCache) IsModelClaimNotRoutable(_ string) bool                      { return false }
 func (c *benchStubCache) ListPodsByModel(_ string) (types.PodList, error)            { return c.pods, nil }
 func (c *benchStubCache) AddRequestCount(_ *types.RoutingContext, _, _ string) int64 { return 1 }
 

@@ -63,6 +63,14 @@ type ModelCache interface {
 	//   bool: True if model exists, false otherwise
 	HasModel(modelName string) bool
 
+	// IsModelClaim reports whether the served model is advertised by a
+	// ModelClaim runtime pod, whether or not it is currently routable.
+	IsModelClaim(modelName string) bool
+
+	// IsModelClaimNotRoutable reports whether the served model is known through
+	// ModelClaim annotations but has no live advertised port.
+	IsModelClaimNotRoutable(modelName string) bool
+
 	// ListModels gets all model names
 	// Returns:
 	//   []string: List of model names

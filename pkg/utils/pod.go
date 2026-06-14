@@ -18,6 +18,7 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -369,6 +370,42 @@ func GetModelPortForPod(requestID string, pod *v1.Pod) int64 {
 		modelPort = defaultPodMetricPort
 	}
 	return modelPort
+}
+
+// ModelClaimsFromPod parses modelclaim.aibrix.ai/* annotations on a warm
+// runtime pod into served-model-name -> serving port. Port 0 is kept as a
+// non-routable marker so cache can distinguish a known-but-not-ready ModelClaim
+// from an unknown model.
+func ModelClaimsFromPod(pod *v1.Pod) map[string]int {
+	if pod == nil || len(pod.Annotations) == 0 {
+		return nil
+	}
+	var out map[string]int
+	for key, value := range pod.Annotations {
+		if !strings.HasPrefix(key, constants.ModelClaimPodAnnotationPrefix) {
+			continue
+		}
+		var entry struct {
+			Model string `json:"model"`
+			Port  int    `json:"port"`
+		}
+		if err := json.Unmarshal([]byte(value), &entry); err != nil || entry.Model == "" {
+			klog.Warningf("pod %s has malformed ModelClaim annotation %q=%q", pod.Name, key, value)
+			continue
+		}
+		if out == nil {
+			out = make(map[string]int)
+		}
+		out[entry.Model] = entry.Port
+	}
+	return out
+}
+
+// ModelClaimPortForPod returns the serving port for a specific served model on
+// a warm runtime pod.
+func ModelClaimPortForPod(pod *v1.Pod, modelName string) (int, bool) {
+	port, ok := ModelClaimsFromPod(pod)[modelName]
+	return port, ok
 }
 
 func GetPodEnv(pod *v1.Pod, envName, defaultValue string) string {

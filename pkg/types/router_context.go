@@ -313,6 +313,9 @@ func (r *RoutingContext) GetRoutingDelay() time.Duration {
 }
 
 func (r *RoutingContext) targetAddress(pod *v1.Pod) string {
+	if port, ok := utils.ModelClaimPortForPod(pod, r.Model); ok && port > 0 {
+		return r.targetAddressWithPort(pod.Status.PodIP, port)
+	}
 	return fmt.Sprintf("%v:%v", pod.Status.PodIP, utils.GetModelPortForPod(r.RequestID, pod))
 }
 
