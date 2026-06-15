@@ -36,6 +36,7 @@ import asyncio
 import contextlib
 import os
 import uuid
+from datetime import datetime, timezone
 from math import isfinite
 from typing import Any, Dict, Optional, Set
 
@@ -706,6 +707,16 @@ class BaseJobDriver:
                 final=True,
             )
 
+        final_snapshot = stats.snapshot(reset_window=False)
+        if final_snapshot.completed + final_snapshot.failed == total:
+            counts = latest_job.status.request_counts
+            if counts.completed + counts.failed != counts.total:
+                counts.launched = max(counts.launched, final_snapshot.started)
+                counts.completed = final_snapshot.completed
+                counts.failed = final_snapshot.failed
+                latest_job.status.finalizing_at = datetime.now(timezone.utc)
+                latest_job.status.state = BatchJobState.FINALIZING
+
         latest_job = await self._sync_completed_requests_from_storage(
             job_id, latest_job
         )
@@ -774,7 +785,15 @@ class BaseJobDriver:
         """
         latest_job = job
         total = job.status.request_counts.total
+        counts = latest_job.status.request_counts
+        if counts.completed + counts.failed == counts.total:
+            return latest_job
+
         for start in range(0, total, _DONE_RECONCILE_CHUNK_SIZE):
+            counts = latest_job.status.request_counts
+            if counts.completed + counts.failed == counts.total:
+                return latest_job
+
             request_ids = range(start, min(start + _DONE_RECONCILE_CHUNK_SIZE, total))
             done_flags = await asyncio.gather(
                 *[
