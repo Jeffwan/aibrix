@@ -93,6 +93,10 @@ type Store struct {
 	// Model related storage
 	metaModels utils.SyncMap[string, *Model] // model_name -> *Model
 
+	// ModelClaim served-model advertisements written on warm runtime pods. Port
+	// 0 means known but not currently routable.
+	modelClaimState modelClaimState
+
 	// Deploymnent related storage
 	enableProfileCaching bool                                    // Default to load from enableModelGPUProfileCaching, can be configured.
 	deploymentProfiles   utils.SyncMap[string, *ModelGPUProfile] // aibrix:profile_[model_name]_[deployment_name] -> *ModelGPUProfile
