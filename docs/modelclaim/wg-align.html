@@ -1,0 +1,410 @@
+<title>ModelClaim — 设计对齐 (WG)</title>
+<style>
+  :root{
+    --ground:#EDF0F3; --surface:#FFFFFF; --surface-2:#F6F8FA;
+    --ink:#14181E; --slate:#586573; --faint:#8A96A2; --line:#D6DCE2;
+    --accent:#0A6E8C; --accent-2:#0E8FB0; --accent-wash:#E4EEF2;
+    --t0:#C0431E; --t1:#C6841A; --t2:#3E7E92; --t3:#6B7682;
+    --ok:#2E7D53; --gap:#B0791C; --cut:#97A0AA;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+  .prose{max-width:72ch}
+  a{color:var(--accent);text-underline-offset:2px}
+  a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+  code,.mono{font-family:var(--mono)}
+  code{font-size:.88em;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:.05em .34em}
+  h2 code,h3 code{background:none;border:none;padding:0}
+
+  /* eyebrow / labels */
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  .lab{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
+
+  /* header */
+  header.top{background:linear-gradient(180deg,#0E2A34 0%,#123742 100%);color:#EAF2F5;padding:56px 0 44px;border-bottom:3px solid var(--accent)}
+  header.top .eyebrow{color:#7FCBE0}
+  header.top h1{font-size:clamp(40px,7vw,68px);line-height:.98;letter-spacing:-.02em;font-weight:820;margin:.28em 0 .1em;text-wrap:balance}
+  header.top .tag{font-size:clamp(16px,2.4vw,20px);color:#B9D4DD;font-weight:500;margin:0}
+  header.top .thesis{max-width:64ch;margin:18px 0 0;color:#D7E6EB;font-size:16.5px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}
+  .chip{font-family:var(--mono);font-size:12px;letter-spacing:.02em;padding:5px 11px;border-radius:999px;
+    background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);color:#DCEBEF;white-space:nowrap}
+  .chip b{color:#8FD6EA;font-weight:600}
+
+  /* sections */
+  section{padding:44px 0;border-bottom:1px solid var(--line)}
+  section:last-of-type{border-bottom:none}
+  .sechead{display:flex;align-items:baseline;gap:14px;margin:0 0 20px}
+  .sechead .num{font-family:var(--mono);font-size:14px;color:var(--accent);font-weight:700;flex:none;padding-top:4px}
+  .sechead h2{font-size:clamp(23px,3.4vw,30px);letter-spacing:-.015em;font-weight:760;margin:0;line-height:1.15;text-wrap:balance}
+  .sechead h2 small{display:block;font-size:14px;font-weight:500;color:var(--slate);letter-spacing:0;margin-top:5px}
+  p{margin:0 0 14px}
+  .muted{color:var(--slate)}
+  .kicker{border-left:3px solid var(--accent);background:var(--accent-wash);padding:12px 16px;border-radius:0 8px 8px 0;margin:0 0 22px}
+  .kicker p{margin:0;color:#0C4B5E;font-size:15px}
+
+  /* grids */
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  @media(max-width:760px){.g2,.g3{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 18px 16px}
+  .card h3{margin:0 0 8px;font-size:16.5px;font-weight:700;letter-spacing:-.01em}
+  .card h3 .n{font-family:var(--mono);color:var(--accent);font-size:14px;margin-right:8px;font-weight:700}
+  .card p{font-size:14.5px;margin:0 0 9px;color:#2B333B}
+  .card p:last-child{margin-bottom:0}
+  .card ul{margin:0;padding-left:18px}
+  .card li{font-size:14px;margin:0 0 6px;color:#2B333B}
+  .card li:last-child{margin-bottom:0}
+
+  /* architecture diagram */
+  .arch{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;overflow-x:auto}
+  .arch-row{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:14px;align-items:stretch;min-width:720px}
+  .plane{border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:14px;display:flex;flex-direction:column;gap:10px}
+  .plane>.lab{margin-bottom:2px}
+  .node-box{border:1px solid var(--accent);border-radius:8px;background:#fff;padding:9px 11px;font-size:13.5px}
+  .node-box .t{font-weight:700;font-size:13.5px}
+  .node-box .s{font-family:var(--mono);font-size:11.5px;color:var(--slate);display:block;margin-top:2px}
+  .eng{border:1px dashed #B9A24E;background:#FBF7EA}
+  .init{border-color:var(--t0);background:#FBEDE8}
+  .nvme{border-color:var(--t2);background:#EAF2F4}
+  .flowlabel{font-family:var(--mono);font-size:11px;color:var(--accent);text-align:center;padding:2px 0}
+  .contract{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap}
+  .contract .c{flex:1 1 300px;border:1px solid var(--line);border-radius:9px;padding:12px 14px;background:var(--surface)}
+  .contract .c b{font-size:13px}
+  .contract .c p{font-size:13.5px;margin:6px 0 0;color:#2B333B}
+
+  /* state machine */
+  .fsm{overflow-x:auto;padding:4px 0 8px}
+  .fsm-track{display:flex;align-items:center;gap:8px;min-width:640px;font-family:var(--mono);font-size:12.5px}
+  .st{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:7px 11px;white-space:nowrap;font-weight:600}
+  .st.ready{border-color:var(--ok);background:#EAF5EF;color:#1E6B44}
+  .st.fail{border-color:var(--t0);background:#FBEDE8;color:#9A3418}
+  .arrow{color:var(--faint)}
+  .fsm-note{font-family:var(--mono);font-size:12px;color:var(--slate);margin-top:6px}
+
+  /* tables */
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-size:14px}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--slate);font-weight:600;background:var(--surface-2)}
+  tbody tr:last-child td{border-bottom:none}
+  td.num,th.num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  .flagrow td{background:#FBF2E4}
+  .flagrow td:first-child{box-shadow:inset 3px 0 0 var(--gap)}
+  .tag-ok{color:var(--ok);font-weight:600}
+  .tag-gap{color:var(--gap);font-weight:600}
+  .tag-cut{color:var(--cut);font-weight:600}
+  .pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+  .p-ok{color:var(--ok)} .p-gap{color:var(--gap)} .p-cut{color:var(--cut)}
+
+  /* tier stack */
+  .tiers{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px}
+  .tier{display:grid;grid-template-columns:64px 1fr auto;gap:14px;align-items:center;
+    border-radius:8px;padding:11px 15px;color:#fff}
+  .tier .tk{font-family:var(--mono);font-weight:700;font-size:15px}
+  .tier .td{font-size:14px}
+  .tier .tc{font-family:var(--mono);font-size:12.5px;opacity:.92;white-space:nowrap}
+  .tier.t0{background:var(--t0)} .tier.t1{background:var(--t1)}
+  .tier.t2{background:var(--t2)} .tier.t3{background:var(--t3)}
+  .heatlabel{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.04em;text-transform:uppercase;margin-top:2px}
+
+  /* two-col scope */
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.split{grid-template-columns:1fr}}
+  .col h3{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .scopelist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+  .scopelist li{font-size:14px;display:flex;gap:9px;align-items:baseline;color:#2B333B}
+  .scopelist li::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;margin-top:7px;background:var(--accent)}
+  .col.deferred .scopelist li::before{background:var(--cut)}
+
+  /* research */
+  .r-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .r-card .rh{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+  .r-card .rid{font-family:var(--mono);font-weight:700;color:#fff;background:var(--accent);border-radius:6px;padding:2px 8px;font-size:13px}
+  .r-card .rt{font-weight:700;font-size:15px}
+  .r-card .venue{font-family:var(--mono);font-size:11px;color:var(--slate);margin-left:auto;white-space:nowrap}
+  .r-card p{font-size:13.5px;margin:0;color:#2B333B}
+  .star{color:var(--gap)}
+
+  /* roadmap */
+  .road{display:flex;gap:0;flex-wrap:wrap;counter-reset:r;list-style:none;margin:0;padding:0}
+  .road li{display:flex;align-items:center;gap:10px;font-size:14px;padding:8px 16px 8px 0}
+  .road li .rn{font-family:var(--mono);font-weight:700;color:var(--accent);border:1.5px solid var(--accent);border-radius:50%;width:24px;height:24px;display:grid;place-items:center;font-size:12px;flex:none}
+
+  footer{padding:30px 0 44px;color:var(--slate);font-size:13px}
+  footer .mono{font-size:12.5px;color:var(--faint)}
+  hr.soft{border:none;border-top:1px solid var(--line);margin:22px 0}
+  .note{font-size:13px;color:var(--slate);font-family:var(--mono)}
+  @media(prefers-reduced-motion:no-preference){
+    section{animation:rise .5s ease both}
+    @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">AIBrix · Working Group 内部对齐</div>
+    <h1>ModelClaim</h1>
+    <p class="tag">高密度多模型 GPU 池化控制面 · 给引擎进程做一个 lightweight 的 <b>model-kubelet</b></p>
+    <p class="thesis">把 GPU 池化,在模型粒度上高密度装箱——N 个模型共享一张卡的 HBM 与算力。phase-1 首 PR 聚焦跑通核心机制:声明式 apply、load-only 放置、kvcached engine、readiness gate、路由、删除 stop。底座是上游 <b>kvcached</b>(弹性 KV)+ <b>vLLM sleep</b>(launch flags 保留);高级策略层移入 phase-2。</p>
+    <div class="chips">
+      <span class="chip"><b>真机验证</b> · Lambda A10 / minikube full-k8s</span>
+      <span class="chip"><b>首 PR</b> · phase-1 trim · 5 commits</span>
+      <span class="chip mono">feat/kvcached-sleep-integration</span>
+      <span class="chip">基线 <b>1 claim : 1 replica</b></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 1 / 2 -->
+  <section>
+    <div class="sechead"><span class="num">§1·2</span><h2>背景与目标<small>为什么要池化,做什么 / 不做什么</small></h2></div>
+    <div class="prose"><p class="muted">推理成本由长尾模型主导:大量低频/中频模型各自独占 GPU(1 model : 1 GPU),利用率极低;静态切分(MIG、按比例分卡)不随负载漂移。取 ServerlessLLM 的"分层加载 + 局部性 + scale-to-zero"路线,舍弃 Aegaeon 的 token 级调度。大 HBM 机型(B300)一等公民:权重常驻为主,驱逐是安全阀。</p></div>
+    <div class="split" style="margin-top:6px">
+      <div class="col">
+        <h3 class="lab">目标</h3>
+        <ul class="scopelist">
+          <li>模型粒度 N:1 共卡:每模型独立引擎进程,弹性共享 KV(kvcached)</li>
+          <li>声明式:<code>kubectl apply</code> 一个 <code>ModelClaim</code> 即完成放置/激活/路由,无每模型 Deployment</li>
+          <li>phase-1 核心机制:load-only 放置 → activate → readiness gate → route → delete stop</li>
+          <li>生产可观测:控制面 lifecycle 指标 + runtime KV 观测指标</li>
+        </ul>
+      </div>
+      <div class="col deferred">
+        <h3 class="lab">非目标</h3>
+        <ul class="scopelist">
+          <li>不做 token 级调度(Aegaeon 路线)</li>
+          <li>不做在线迁移(低 ROI)</li>
+          <li>不 fork kvcached(只作机制层,经 kvctl / /dev/shm 驱动)</li>
+          <li>首版不做多副本负载伸缩(replicas 字段已留)</li>
+          <li>首 PR 不含 KV 配额/回收、sleep driver、scale-to-zero、request hold、节点 locality writer</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <div class="sechead"><span class="num">§3</span><h2>架构总览<small>四组件、两条契约 —— decide vs execute</small></h2></div>
+    <div class="arch">
+      <div class="arch-row">
+        <div class="plane">
+          <span class="lab">控制面 · Go</span>
+          <div class="node-box"><span class="t">ModelClaim CRD</span><span class="s">modelName / podSelector / artifactURL / engine</span></div>
+          <div class="flowlabel">↓ reconcile</div>
+          <div class="node-box"><span class="t">modelclaim controller</span><span class="s">load-only placement · readiness gate</span></div>
+        </div>
+        <div class="plane">
+          <span class="lab">warm GPU pod · 每 pod 一卡</span>
+          <div class="node-box init"><span class="t">tini + 重启循环 (PID 1)</span><span class="s">agent 崩→就地重启,不重启容器</span></div>
+          <div class="flowlabel">↓ 保活</div>
+          <div class="node-box"><span class="t">agent / model_runtime</span><span class="s">常驻 supervisor · :8080</span></div>
+          <div class="flowlabel">↓ Popen / stop / health</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="node-box eng" style="flex:1"><span class="t">engine A</span><span class="s">ipc=kvc_a · setsid</span></div>
+            <div class="node-box eng" style="flex:1"><span class="t">engine B</span><span class="s">ipc=kvc_b · setsid</span></div>
+          </div>
+          <div class="node-box nvme"><span class="t">T2 node NVMe</span><span class="s">共享权重缓存(全 pod 同挂)</span></div>
+        </div>
+        <div class="plane">
+          <span class="lab">数据面</span>
+          <div class="node-box"><span class="t">Envoy + gateway-plugins</span><span class="s">ext_proc · route</span></div>
+          <div class="flowlabel">↑ 读注解路由</div>
+          <div class="node-box"><span class="t">client</span><span class="s">model=qwen3-0.6b → (podIP, per-engine port)</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="contract">
+      <div class="c"><b>契约 1 · 引擎↔控制面</b><p>phase-1 使用命令式 HTTP actuator:<code>activate</code> / <code>deactivate(stop)</code> / <code>list(+ready,+kv_used,+kv_total)</code>。声明式 desired/actual 对账与 model-kubelet supervisor 是 phase-2 加固线。</p></div>
+      <div class="c"><b>契约 2 · 控制面↔数据面</b><p>warm pod 上注解 <code>modelclaim.aibrix.ai/&lt;claim&gt;={"model":…,"port":N}</code>;<b><code>port:0</code> = 已知但不可路由</b>。网关复用既有 pod informer,零新增 informer。</p></div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <div class="sechead"><span class="num">§4</span><h2>原子能力层<small>上游依赖 —— 两个正交的机制</small></h2></div>
+    <div class="grid g2">
+      <div class="card"><h3>kvcached · 弹性 KV</h3><p class="muted">CUDA VMM 按需映射物理页。每引擎独立 <code>KVCACHED_IPC_NAME</code>;phase-1 只读 <code>/dev/shm</code> MemInfoStruct(3×int64:total/used/prealloc)做观测。</p><p class="note">kvctl 配额执行器和策略层移入 phase-2。</p></div>
+      <div class="card"><h3>vLLM sleep · 权重卸载</h3><p class="muted"><code>--enable-sleep-mode</code> + <code>VLLM_SERVER_DEV_MODE=1</code> 作为 launch flags 保留,phase-1 不驱动 <code>/sleep</code>/<code>/wake_up</code>。</p><p class="note">sleep driver 与 kvcached 正交,移入 phase-2。</p></div>
+    </div>
+    <p class="note" style="margin-top:14px">测试指南验证上游原子机制;首 PR 只使用 kvcached launch、KV 观测和 sleep launch flags。</p>
+  </section>
+
+  <!-- 5 core -->
+  <section>
+    <div class="sechead"><span class="num">§5</span><h2>核心机制<small>把"能跑起来"升级成"设计得住" —— 机制 · 关键决策 · 失效收敛</small></h2></div>
+    <div class="kicker"><p>心智模型 = <b>给引擎进程做一个 lightweight 的 model-kubelet</b>。k8s 管 pod;pod 内 N 个引擎进程的生命周期 / 探活 / 摘流由我们的 agent 自己管。优先级:先把 <b>5.1 / 5.2 / 5.5 / 5.6</b> 的静态系统层做扎实,5.3 / 5.4 动态能力降级。</p></div>
+
+    <div class="grid g2" style="margin-bottom:16px">
+      <div class="card"><h3><span class="n">5.1</span>运行时封装 + 声明式对账</h3>
+        <p><b>常驻三层</b>:controller(决策)→ agent(常驻 in-pod 监督器,pod 入口即它)→ engine procs。把"人肉 bash 进容器手敲 launch"固化成常驻角色。</p>
+        <p>协议从命令式 RPC 升级为<b>期望态对账</b>:agent 上报的 <code>{phase,ready,alive,kv_used,restart_count,last_error}</code> 是引擎状态<b>单一真源</b>,消掉 dict / 注解 / status 三处漂移。防双写:只有 agent 动引擎,controller 只动 desired。</p>
+      </div>
+      <div class="card"><h3><span class="n">5.2</span>pod 内生命周期(model-kubelet)</h3>
+        <div class="fsm"><div class="fsm-track">
+          <span class="st">Launching</span><span class="arrow">→</span>
+          <span class="st">Booting</span><span class="arrow">→</span>
+          <span class="st ready">Ready</span><span class="arrow">→</span>
+          <span class="st">Draining</span><span class="arrow">→</span>
+          <span class="st">Stopped</span>
+          <span class="arrow">⟲</span><span class="st fail">backoff restart</span>
+        </div></div>
+        <p style="margin-top:4px">liveness=进程存活,readiness=<code>/health 200</code>;boot 期路由保持 <code>port:0</code>(readiness gate,零 502)。退避重启封顶 60s / 上限 5 次,超限 <code>Failed</code> 上报换 pod。</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <h3><span class="n">5.2*</span>进程模型 —— 为什么 agent 崩了数据面不断</h3>
+      <p>引擎 <code>setsid</code> 脱离,agent 一死引擎不会被连带杀掉。但当前 warm pod entrypoint 就是 agent → <b>agent = PID 1 → 崩 = 容器重启 = 引擎全死</b>。故加一层极薄 init:<b>PID 1 = tini + 重启循环</b>,agent 崩了<b>就地重启</b>(不惊动 k8s);引擎(已 reparent 到 tini)照跑;agent 重启后从本地状态文件 <code>/var/run/aibrix/engines.json</code>(<b>不是 etcd</b>)<b>re-adopt</b>——按 pid + <code>/health</code> 认领活着的、只重拉真死的。类比正是 <b>systemd → kubelet → 容器运行时</b>。</p>
+      <div class="tablewrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>谁崩</th><th>现象</th><th>收敛</th></tr></thead>
+          <tbody>
+            <tr><td>engine 进程</td><td>supervise 秒级发现</td><td>退避重启;超限 → Failed 上报 → 换 pod</td></tr>
+            <tr><td>agent</td><td>引擎变孤儿(但活着)</td><td><b>init 就地重启 + re-adopt,数据面不断</b></td></tr>
+            <tr><td>controller</td><td>desired 不更新</td><td>引擎照跑,agent 本地 supervise 不断,路由冻结在最后已知态</td></tr>
+            <tr><td>网络分区</td><td>读不到 actual</td><td>保守不动路由,恢复后对账</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <h3><span class="n">5.3·5.4</span>请求 hold + scale-to-zero <span class="pill p-cut">动态能力 · 深度降级</span></h3>
+      <p><b>hold(透明唤醒,首 PR 外)</b>:撞到不可路由 claim 时有界挂住、可路由后透明转发的 UX 已在老分支验证,但 phase-1 全砍;网关保持普通 400/503 行为。</p>
+      <p><b>scale-to-zero(首 PR 外)</b>:redis 活跃度 + <code>port:0</code> 停泊 + 防抖;真机全周期已验证,含 4 个只有真集群暴露并已修复的 bug。在老分支 <code>c7ceb886</code>,follow-up 整捞。</p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <h3><span class="n">5.5</span>GPU 显存完整账本 —— 把"能 launch 很多"变成"管得住"</h3>
+      <p>一张卡上 N 个引擎,显存消费者其实 5 类,现状只算了第 ② 类:</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>消费者</th><th>谁在管</th><th>现状</th></tr></thead>
+          <tbody>
+          <tr><td>① 权重 W</td><td>phase-2 vLLM sleep(evict→DRAM)</td><td><span class="tag-gap">phase-1 无 weightSize 字段、无账</span></td></tr>
+          <tr><td>② KV(弹性)</td><td>kvcached</td><td><span class="tag-ok">phase-1 只观测 used/total;配额/回收移入 phase-2</span></td></tr>
+            <tr class="flagrow"><td>③ activation + CUDA graph + 框架 overhead A</td><td><b>没人管</b></td><td><span class="tag-gap">OOM 真凶(每引擎 ~1–3GB)</span></td></tr>
+            <tr><td>④ headroom H</td><td>kvcached (1-util)</td><td>隐式预留</td></tr>
+            <tr><td>⑤ 碎片</td><td>VMM 按页映射</td><td>基本吸收</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:12px"><b>核心补法:第 ③ 类实测不预测</b> —— agent 在引擎 ready 后、放流量前读一次实际显存足迹(<code>nvidia-smi</code>/torch)记进每卡账本;KV 走 <code>/dev/shm</code>。每卡不变式 <code>Σ(W+A) + Σ(KV_floor) + H ≤ HBM</code>。<b>v1 咨询式</b>(算 + metric + 喂放置 + 超额告警),硬准入快速跟进。</p>
+    </div>
+
+    <div class="card">
+      <h3><span class="n">5.6</span>放置(选哪台机器)+ CPU DRAM 账 + 多级缓存</h3>
+      <p>脊柱 = 多级缓存层级,激活/唤醒成本随 tier 递增 —— 这就是 locality cost 的物理来源:</p>
+      <div class="tiers">
+        <div class="tier t0"><span class="tk">T0</span><span class="td">HBM(active)· 权重驻留 + KV,引擎在跑</span><span class="tc">最热</span></div>
+        <div class="tier t1"><span class="tk">T1</span><span class="td">pinned CPU DRAM · phase-2 sleep L1 睡下的权重</span><span class="tc">亚秒唤醒</span></div>
+        <div class="tier t2"><span class="tk">T2</span><span class="td">node NVMe(hostPath)· 已下载权重,全 pod 共享</span><span class="tc">秒级 · 真机 download 0</span></div>
+        <div class="tier t3"><span class="tk">T3</span><span class="td">remote(HF/S3/TOS)· 冷,首次下载</span><span class="tc">几十秒</span></div>
+      </div>
+      <div class="heatlabel"><span>◀ 便宜 / 热</span><span>贵 / 冷 ▶</span></div>
+      <div class="grid g3" style="margin-top:14px">
+        <div class="card" style="padding:13px"><h3 style="font-size:14px">① 选哪台 = filter+score</h3><p style="font-size:13px">Filter:候选卡查 5.5 账本能否放下(v1 咨询)。Score:权重在这台机的 tier(HBM/DRAM &gt; NVMe &gt; remote)+ load + DRAM 余量 → <code>PlacementProvider</code>。</p></div>
+        <div class="card" style="padding:13px"><h3 style="font-size:14px">② CPU memory 够不够</h3><p style="font-size:13px">sleep L1 权重进 <b>pinned DRAM</b>,睡多了 DRAM 先于 HBM 爆。节点账本加 <code>Σ(睡眠权重) ≤ DRAM 预算</code>(读实际 <code>free</code> + 可配比例,非 k8s allocatable)。</p></div>
+        <div class="card" style="padding:13px"><h3 style="font-size:14px">③ 多级缓存谁维护</h3><p style="font-size:13px">T2 缺容量上限 + LRU;DaemonSet 扫本地写节点注解喂放置;promotion/demotion 链(激活 T2/T3→T0、sleep T0→T1、压力 T1→T2)。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section>
+    <div class="sechead"><span class="num">§7</span><h2>真机验证结论<small>Lambda A10 · minikube full-k8s</small></h2></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>层</th><th>验证</th><th class="num">关键数字</th></tr></thead>
+        <tbody>
+          <tr><td>L1 单卡</td><td>双模型共卡、独立端口路由 2/2</td><td class="num">共 6.5 GiB · 同 podIP 不同端口</td></tr>
+          <tr><td>L2/L3/hold</td><td>完整能力已在老分支验证</td><td class="num">phase-2 从 c7ceb886 捞回</td></tr>
+          <tr><td>指标</td><td>controller lifecycle + runtime KV scrape</td><td class="num">kv_used 704 MB / total 19.3 GB</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section>
+    <div class="sechead"><span class="num">§8</span><h2>首 PR 范围 vs 完整能力</h2></div>
+    <div class="split">
+      <div class="col">
+        <h3 class="lab"><span class="pill p-ok">首 PR · 已含</span></h3>
+        <ul class="scopelist">
+          <li>CRD + runtime 生命周期 + controller + 路由 + readiness gate</li>
+          <li>KV 观测指标 + samples</li>
+          <li>ext_proc <code>messageTimeout</code> 保持 upstream 默认 60s</li>
+        </ul>
+      </div>
+      <div class="col deferred">
+        <h3 class="lab"><span class="pill p-cut">首 PR 外 · follow-up</span></h3>
+        <ul class="scopelist">
+          <li>Scale-to-zero(park/wake + redis + 4 真机修复)· 老分支 <code>c7ceb886</code></li>
+          <li>KV 配额/回收、sleep driver、request hold</li>
+          <li>节点状态上报 DaemonSet(局部性 writer)</li>
+          <li>weight-HBM 硬准入(CapacityProvider,Sardeenz profiler 印证)</li>
+          <li>placement 二期 / 多副本 HMA / park 计数器精确化</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section>
+    <div class="sechead"><span class="num">§9</span><h2>业界对标<small>同一底座(kvcached+sleep),我们的空白在"声明式 + 自动化策略层"</small></h2></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>系统</th><th>粒度 / 机制</th><th>k8s 形态</th><th>与我们的关系</th></tr></thead>
+        <tbody>
+          <tr><td>ServerlessLLM <span class="note">OSDI'24</span></td><td>分层 checkpoint 快加载 + 缩零</td><td>自带集群层</td><td>路线母版;其 store 在 kvcached 镜像 NO-GO</td></tr>
+          <tr><td>Prism <span class="note">2505.04021</span></td><td>VMM 按需显存 + 跨模型协调</td><td>无</td><td>学术近亲(同 VMM 机制层)</td></tr>
+          <tr><td>Aegaeon <span class="note">SOSP'25</span></td><td><b>token 级</b> auto-scaling</td><td>生产内部</td><td>我们明确不取的另一极</td></tr>
+          <tr><td>kvcached <span class="note">Berkeley</span></td><td>VMM 弹性 KV(去中心)</td><td>无</td><td>我们的机制底座,策略层是它留白</td></tr>
+          <tr><td>Sardeenz <span class="note">Red Hat PoC</span></td><td>kvcached + sleep(同底座!)</td><td>单容器,无 CRD</td><td>方向被独立验证,但停在单机手动 ↓</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="kicker" style="margin-top:16px"><p><b>Sardeenz(Red Hat, 2026-06)</b>:同一 kvcached+sleep 组合的另一控制面,判断"缺一个控制面"是空档——方向被独立验证。完整老分支已验证 scale-to-zero + hold,但首 PR 先收敛到核心机制;值得吸取的是他们的 <b>memory profiler</b> 与内置基准套件。</p></div>
+  </section>
+
+  <!-- 10 -->
+  <section>
+    <div class="sechead"><span class="num">§10</span><h2>Research 机会评估<small>intern 论文方向 —— 机制现成,"策略层"大量留白</small></h2></div>
+    <div class="grid g2">
+      <div class="r-card"><div class="rh"><span class="rid">R1</span><span class="rt">SLO 感知 warm-set 管理 <span class="star">★推荐</span></span><span class="venue">MLSys/EuroSys</span></div><p>N 模型 M 卡、冷启动 50–120s 下,哪些保 Active/DRAM-warm/Parked 最大化 SLO?到达率预测驱动预测性 unpark;形式化为带切换成本的在线缓存问题(竞争比/regret)+ 系统实现。风险低。</p></div>
+      <div class="r-card"><div class="rh"><span class="rid">R2</span><span class="rt">弹性 KV 配额最优分配 <span class="star">★推荐</span></span><span class="venue">MLSys/SoCC</span></div><p>min/max/shares 是 HTB 启发式;共卡竞争下"给谁多少 KV"的最优解?效用最大化 + 成本不对称回收两层在线算法;对照 Prism,差异 = 显式 SLA 语义。与 R1 可拼一篇。</p></div>
+      <div class="r-card"><div class="rh"><span class="rid">R3</span><span class="rt">唤醒时延分解与流水线唤醒</span><span class="venue">ATC/HotOS</span></div><p>60s 唤醒里下载/加载/compile/KV 各占多少?边加载边服务:分层快加载格式(填 sllm_store NO-GO)、CUDA C/R、compile 缓存持久化、分阶段 wake。工程外溢价值最大。</p></div>
+      <div class="r-card"><div class="rh"><span class="rid">R4</span><span class="rt">服务粒度谱系</span><span class="venue">HotCloud/SoCC</span></div><p>token 级(Aegaeon)vs 空间(MuxServe)vs 模型级(我们)适用域从未被统一度量。统一成本模型 + 同 trace 三粒度实测,给"按负载选粒度"的决策图。</p></div>
+    </div>
+    <p class="note" style="margin-top:12px">R5 共卡干扰与准入控制(EuroSys/ATC):kvcached 解决"放得下"没解决"跑得好";干扰画像 → 干扰感知准入,对接 placement 二期。 · <b>首选 R1(或 R1+R2 合体)</b>:机制现成、数据自产、故事完整,与 roadmap 直接互哺。</p>
+  </section>
+
+  <!-- 11 -->
+  <section>
+    <div class="sechead"><span class="num">§11</span><h2>Roadmap</h2></div>
+    <ol class="road">
+      <li><span class="rn">1</span>首 PR 落地(phase-1 trim)</li>
+      <li><span class="rn">2</span>follow-up 捞回 KV reclaim / sleep driver / scale-to-zero / hold / 节点上报 DaemonSet</li>
+      <li><span class="rn">3</span>weight-HBM 准入(CapacityProvider)</li>
+      <li><span class="rn">4</span>placement 二期(peer-warm / 反亲和 / 跨节点取权重)</li>
+      <li><span class="rn">5</span>多副本 HMA</li>
+      <li><span class="rn">6</span>R1/R2 研究并行启动</li>
+    </ol>
+  </section>
+
+  <footer>
+    <hr class="soft">
+    <p>源文档:<span class="mono">docs/modelclaim/design-internal.md</span> · 配套:<span class="mono">docs/modelclaim/kvcached-vllm-sleep-test-guide.md</span></p>
+    <p class="mono">ModelClaim · 高密度多模型 GPU 池化控制面 · AIBrix WG 内部对齐</p>
+  </footer>
+</main>
