@@ -88,15 +88,33 @@ Baselines:静态 profile+ILP(自家 melange 求解器)/ oracle profile(上界)/ 
 5. **cost-vs-window frontier**:各策略在"窗口命中 ∧ 最低 $"平面上的位置;ours 逼近 oracle(C3 主图)。
 6. **漂移/抢占注入**:价格跳变、容量消失、输出长度重尾下,重规划把窗口命中拉回 100% 而静态方案 miss 或超支;含"故意注入有偏早期估计仍靠重规划+兜底保窗口"的鲁棒性实验。
 
-### 2.6 系统落点 = 已预留的工程缺口(人力有限约束成立)
+### 2.6 系统现状与工程缺口(基于 upstream main `e3e10f9` 实测,2026-08)
 
-| 论文组件 | 工程缺口(本 clone 可见的 seam;你们 workspace 已推进一部分) |
-|---|---|
-| C1 矩阵 + 漂移序列 | catalog `ListPricingPredictions/ListResourcePredictions` **已声明未实现**(`catalog/interface.go`);RunPod/Lambda catalog 待填 |
-| C2 采样/校准 | 新增 `batch/optimizer/{sampler,calibrator}`;`scheduler.py` 的 `SchedulePolicy` 扩展位(:39/:190 TODO) |
-| C3 planner | planner `Schedule()` 的 capacity-aware hook(`backend.go` TODO 注明);**非 24h completion window 目前 "accepted but deferred"**(`registry.py:207/229` 的 deferred-fields 模式)→ 放开它本身就是产品 feature |
-| C4 ledger | `job_manager` 的 `_request_progress_bits` 已是雏形 → 持久化 + 幂等提交 |
-| 多 provider | 你们 workspace 已有 `provider/{runpod,lambdacloud}` 与 `job_driver/runtime/`(本 clone 尚无)→ 即 P0 的延续 |
+**已建成(论文不需要再建的)**:
+- **P0 基本完成**:Lambda(真实 VM via API + **实时定价 catalog** + 同类最便宜实例选择 `instancetypes.go:69-71`)、RunPod(REST 起 pod,容器只跑 sshd,MDS 经 SSH 拉起 vLLM `provisioner.go:258-264`)、`ssh_launch`/k8s 两套 runtime、**任意 completion window 语法**(`utils/completion_window.go:27`,d/h/min 双语实现)。
+- **C4 地基大半**:按行号的请求级 done-marker(NX+TTL 锁 `batch_metastore.py:237-310`)、按 request index 幂等输出提交(multipart part number `adapter.py:275-306`)、重启扫描续跑(`base.py:507-530`)、runtime ownership 租约+心跳、planner 重启对账。
+- **错误注入框架双端已在**:Go 25 个注入点(含 crash/panic,内存 trace)+ Python 6 断点(含 `interrupt_runtime`)——failure-injection 实验的地基。
+- **自适应 AIMD 并发控制器**(#2530,最新):对真实流量做在线容量搜索,含 TTFT/TPOT/**e2e-TPOT**(`latency/output_tokens`,`concurrency.py:373-375`)EWMA。
+
+**三个"采了就扔 / 建了没接"的断点——论文核心 = 把它们接上**:
+1. **AIMD 学到的容量与吞吐信号在 run 结束即丢弃**(in-process、不持久化、无 per-endpoint 维度;`DispatchStats` 仅进日志 `base.py:1574-1601`)→ C2 的测量端**已经存在**,只差"留下来、分层、按 target 记账"。
+2. **Lambda 实时定价被采集但全局无人消费**:`ResourceManager.Catalog` 构造后**没有任何读者**(grep 证实)→ 定价知识物理存在,决策层为零。
+3. **completion window 被解析、持久化,但只用于校验+过期**;window→资源的路径是**死代码**(`AllocationTimeWindow` 全部返回 nil、`ResourceProvisionSpec.TimeWindow` 无生产者 `handlers.go:288-322`)→ C3 的钩子已铸好,没通电。
+- planner 今天**不做任何决策**:模板转写 + `MaxConcurrentProvisioning=1` 门闸;优先队列全部 priority=0 退化为 FIFO;四个 provider 共用 `defaultPlannerBackend`(`register.go:24-52`)。
+- **RunPod catalog 6/6 stub 的原因是 API 根本不暴露目录/定价**(`catalog.go:26-31` 注释言明)→ **静态目录在 RunPod 上不可行,"用 job 自己测"是唯一路径——这本身就是 productive profiling 的天然动机,写进 intro。**
+
+**缺口 → 最小增量构建清单(人力有限;按工作量标注)**:
+
+| # | 构建项 | 论文组件 | 工作量 | 说明 |
+|---|---|---|---|---|
+| 1 | **持久化 AIMD/dispatch 遥测**为 per-(target, shape-stratum) profile store;补 per-request 时延/token 记录维度 | C2 测量端 | **小** | 最便宜的第一步:别再丢弃已测到的东西 |
+| 2 | **成本记账 join**:`ProvisionResult{CreatedAt..}` × `jobs.provision_id` × Lambda 价格 → per-job $(三块都在、无人相乘);Grafana 加 吞吐/$/GPU-秒 面板(现有面板零吞吐/成本) | C1 | **小** | 也是产品刚需(前端注释已自称 "cost-attribution path") |
+| 3 | **分层采样器**:入库校验时(`storage/input_validation.py` 是现成 seam)按 shape 分层;probe 切片派发 | C2 | **中** | |
+| 4 | **窗口+定价感知 planner backend**:为 lambda/runpod 注册非 default backend(registry seam 现成);复活 TimeWindow 死代码;消费 catalog+profile | C3 | **中** | policy 插件注册表 `(provisionType, policyType)` 已在,只有 "simple" |
+| 5 | **单 job 跨多 target 分片**(当前一 job 一 runtime、一 worker,`job_progress_tracker.py:27-29`) | C2/C3 前置 | **大(最大的一块)** | 跨 provider 同时 probe/执行必需;需要 claim ledger;`custom_id` 级幂等(现按行号)+ attempt 记账一并补 |
+| 6 | C4 打磨:custom_id 幂等、持久 attempt/失败原因、游标化 resume(现为 O(total) 扫描)、本地 metastore 的去重缺失 | C4 | 中 | 论文只需一段+一图,工程按需 |
+
+> 注:`gpu_optimizer` 的 melange ILP + `GPUProfile{cost,tputs}` 与 batch **零链接**(grep 证实)、面向 serving RPS、离线喂数——作为**内部 baseline** 引用,不复用其管线。
 
 ### 2.7 Novelty 判决与审稿反驳(两轮对抗式查新已完成)
 
