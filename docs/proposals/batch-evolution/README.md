@@ -35,6 +35,7 @@ P/D 解耦 StormService、KVCache V1 connector、负载感知路由、autoscaler
 | [`06-north-star-prfaq-blog.md`](./06-north-star-prfaq-blog.md) | 北极星(全部 P 落地后)的 PRFAQ + blog,以 **cost-SLO** 为主线;v1.0 叙事 | English |
 | [`07-research-paper-ideas.md`](./07-research-paper-ideas.md) | 从实现沉淀 **research paper**:5 角度 novelty 验证 + 推荐论文组合 + 必引文献 + 风险登记册 | 中文 |
 | [`08-AD-quantified-walkthrough.md`](./08-AD-quantified-walkthrough.md) | **A/D 收益量化**:具体 batch 文件 + 长度分布,逐步算清收益来自哪 + 落地可行性 | 中文 |
+| **[`09-batch-paper-convergence.md`](./09-batch-paper-convergence.md)** | **新论文收敛方案(取代 07 的组合建议)**:productive profiling × completion window × 云容量;temporal P/D 已单独成文、不再涉及 | 中文 |
 
 > **方向已拍板(见 `05-decisions.md`)**:v0.7.0 = **架构重构(MDS/planner/RM)+ 原生 neocloud provisioning(Lambda/RunPod)**,
 > 定位为**云原生 batch 的入口、替代 SkyPilot**。近期主攻 **D(跨云 spot)与 A(吞吐)**;
