@@ -59,17 +59,21 @@
 | **C3** | Completion-window planner | L3 策略 | 校准模型 + 实时容量/价格 → 剩余工作的放置/并行度/供给计划;漂移/抢占触发重规划;latest-safe-start + reserved 兜底**保证窗口** |
 | **C4** | 可靠性地基(不做 headline) | L1 状态 | request ledger + `custom_id` 幂等提交 + 便宜重跑,使 spot/preemptible 可入池;一段正文 + 一个 ablation |
 
-### 2.4 与最接近工作的 delta(简表;agent 查新回来后细化)
+### 2.4 与最接近工作的 delta(已对抗式查新验证,按威胁度排)
 
-| 前作 | 它做什么 | 新论文的 delta |
+| 前作 | 它做什么 | 新论文的 delta(活下来的差异) |
 |---|---|---|
-| **SageServe** (2502.14617) | 单 CSP、VM 级、forecast+ILP、deadline | 多 provider 外部容量获取;**在线校准**取代静态 profile;引擎级放置 |
-| **Mélange** (2404.14527) / 自家 gpu_optimizer | 离线 profile + ILP,online serving 延迟 SLO | 在线 productive 校准;batch+window;多云。**内部 baseline** |
-| **CherryPick** (NSDI'17) / **Ernest** (NSDI'16) | 云配置搜索/预测,跑**专门的** benchmark/样本 | probe = 真实请求、**计入完成度(零浪费)**;LLM shape 感知;deadline 耦合;持续校准而非一次性搜索 |
-| **Vidur** (MLSys'24) | 模拟器预测 LLM 性能 | 实测而非仿真;跨 provider/驱动 ground truth;零额外成本 |
-| **Can't-Be-Late** (NSDI'24) / **SkyNomad** (2601) | deadline-aware spot,job 为不透明 blob、大小已知 | job 大小内生(输出长度)在线修正;shape→吞吐依赖;多 provider 价格/容量联合 |
-| **AQP(eddies/mid-query re-opt)** | "查询自己的执行教优化器"(概念祖先,必引) | 单引擎算子 vs 跨 provider GPU 市场 + $ + deadline + LLM shape |
-| **HyGen/ConServe/Valve** | 共置收割 | cite-not-compete(我们不做共置,决策 D-B/D-E) |
+| ⚠️ **Task-Sampling for Cluster Job Scheduling** (arXiv 2108.10464) | **最近的结构性祖先,此前所有讨论都没发现它**:采样一小部分**真实任务**执行(productive!),学习该 job 的 runtime 分布,再调度其余任务("learning in space") | 它是**同构单集群**、只决定 *when* 不选 *where*;只优化 JCT,无 $/deadline;**无分层**(同构算子的偏斜 ≠ LLM 的 shape 异质);非 LLM。我们的 delta = 异构多目标选择(provider×GPU×config)+ shape 分层 + $×窗口耦合 |
+| **SageServe** (2502.14617) | 单 CSP、VM 级、**traffic-forecast**+ILP、在线混合 SLA | 多 provider 外部容量获取;**用本 job 的 productive probe 在线校准**取代历史流量预测;deadline-bound 有限 batch 而非持续 serving;引擎级放置 |
+| **SkyNomad** (2601.06520) / **Can't-Be-Late** (NSDI'24) | deadline+spot batch;SkyNomad 有"轻量探测 + reserved 兜底" | **关键区分:SkyNomad 探的是"可用性"**(submit-and-cancel 二值信号,Spot-and-Scoot 2604.16457 同源),**不是"本负载在此硬件上的吞吐"**;job 为不透明 blob、进度率已知;无 shape/输出长度内生不确定;Can't-Be-Late 只决定单目标 spot↔OD 的 *when* |
+| **CherryPick** (NSDI'17) | BO 搜云配置,probe 是**代理 run**(子采样数据/短跑),产出的是计时不是交付物;靠 **recurring** job 摊销探索成本 | 我们的 probe 是**交付物本身(零浪费)**——一次性 24h batch 没有 recurrence 可摊销,**零浪费是 load-bearing 而非锦上添花**;持续校准而非一次性搜索;多 provider $ 动态 |
+| **Mélange** (2404.14527) / 自家 gpu_optimizer | 离线 profile + bin-packing,online serving 延迟 SLO,单 deployment | 在线 productive 校准;batch+window;多 provider。**内部 baseline(自家 melange 求解器)** |
+| **2512.20967**(deadline-aware fine-tuning on spot) | 训练场景的 spot+OD deadline 分配,有正式 online-algorithm 分析 | 推理非训练;多 provider/SKU 异构(它单市场);吞吐靠 productive 校准而非价格/可用性预测。**C3 最近的概念类比,必须正面 engage 其理论框架** |
+| **Vidur** (MLSys'24) | LLM 性能模拟器(<5% 误差) | **当 pre-planning oracle 引入而非对手**;我们补"跨 provider/驱动/版本的实测 ground truth" |
+| **Ernest** (NSDI'16) | 实验设计采样→预测 Spark 伸缩 | **为我们所用**:其最小样本实验设计理论直接为分层 probe 配额辩护 |
+| **Morphling** (SoCC'21) | 跨服务 meta-prior + 少样本适配 | 诚实 limitation:我们 per-job 校准丢弃了跨 job 先验 → future work |
+| **AQP / eddies** (SIGMOD'00) | "查询自己的 tuple 教优化器",完全 productive——**最深的概念根,必引** | 单引擎算子计划 vs 跨 provider GPU 市场 + $ + deadline + LLM shape |
+| **HyGen/ConServe/Valve** | 共置收割 | cite-not-compete(不做共置,决策 D-B/D-E);若未来用被收割容量,引用其抢占机制而非重造 |
 | **自家 temporal P/D 论文** | P/D 时间解耦 + KV staging | **不 re-claim**;作为可选执行机制引用 |
 
 ### 2.5 关键实验与"杀手图"
@@ -77,10 +81,12 @@
 Baselines:静态 profile+ILP(自家 melange 求解器)/ oracle profile(上界)/ CherryPick 式非生产搜索 / 单 provider / uniform 放置。
 指标:$/job、窗口命中率、模型误差随时间、probe 开销(≈0 vs 独立 benchmark 成本)、对价格/容量漂移与输出长度重尾的鲁棒性。
 
-1. **静态 profile 过期曲线**:同一 (模型,GPU) 的吞吐预测误差随引擎版本/驱动/provider/时间漂移增长 → 离线矩阵不可持续(C1 的立论图)。
-2. **零浪费**:productive probing 的额外成本 ≈0 vs CherryPick 式 benchmark 的 $ 与时间(C2 的立论图)。
-3. **cost-vs-window frontier**:各策略在"窗口命中 ∧ 最低 $"平面上的位置;ours 逼近 oracle(C3 主图)。
-4. **漂移/抢占注入**:价格跳变、容量消失、输出长度重尾下,重规划把窗口命中拉回 100% 而静态方案 miss 或超支。
+1. **静态 profile 过期曲线**:同一 (模型,GPU) 的吞吐预测误差随引擎版本/驱动/provider/时间漂移增长 → 离线矩阵不可持续(C1 的立论图;注意 2502.00722 已做静态异构成本测量,**C1 必须靠漂移时间序列差异化**)。
+2. **零浪费 ablation(C2 立论图)**:同样的分层 probe,"计入完成度" vs "纯开销(CherryPick 式)"对比 $ 与 deadline——量化一次性(无 recurrence 可摊销)场景下零浪费买到了什么。
+3. **分层 vs i.i.d. probe ablation**:重尾输出/长上下文尾部下,无分层采样漏测 rare-but-costly shape → 校准偏差 → 错误放置;分层修正之。
+4. **可用性风险 ≠ 吞吐风险(打 SkyNomad 的图)**:构造 spot **可用**(SkyNomad 不会兜底)但本 shape-mix 的校准吞吐**仍会 miss 窗口**的场景,展示我们提前降级 reserved——把两种风险实证解耦。
+5. **cost-vs-window frontier**:各策略在"窗口命中 ∧ 最低 $"平面上的位置;ours 逼近 oracle(C3 主图)。
+6. **漂移/抢占注入**:价格跳变、容量消失、输出长度重尾下,重规划把窗口命中拉回 100% 而静态方案 miss 或超支;含"故意注入有偏早期估计仍靠重规划+兜底保窗口"的鲁棒性实验。
 
 ### 2.6 系统落点 = 已预留的工程缺口(人力有限约束成立)
 
@@ -92,12 +98,34 @@ Baselines:静态 profile+ILP(自家 melange 求解器)/ oracle profile(上界)/ 
 | C4 ledger | `job_manager` 的 `_request_progress_bits` 已是雏形 → 持久化 + 幂等提交 |
 | 多 provider | 你们 workspace 已有 `provider/{runpod,lambdacloud}` 与 `job_driver/runtime/`(本 clone 尚无)→ 即 P0 的延续 |
 
-### 2.7 风险与待验证(agent 进行中)
+### 2.7 Novelty 判决与审稿反驳(两轮对抗式查新已完成)
 
-- **头号 novelty 风险**:"productive profiling 是 CherryPick/AQP 换皮" → 防御靠三点:probe 生产性(零浪费)、LLM shape 依赖(prefill/decode/输出长度)、deadline 耦合(探索预算=slack)。对抗式查新 agent 正在验证,结论回来后更新本节。
-- **SageServe 正面对比**不可回避(§2.4 第一行)。
-- **可复现性 objection**(neocloud 价格波动)→ 记录价格时间序列 + trace-driven replay(价格作为输入回放)。
-- **分层抽样偏差**(重尾输出把估计带偏)→ 乐观/悲观区间 + 置信度晋升 + reserved 兜底,把"估不准"转化为"多花一点 reserved",不 miss 窗口。
+**判决:部分新颖——合取无人占。** 没有任何已发表工作同时具备:全量前置可见 → shape 分层 → **productive(零浪费)probe** → 在线校准 per-(provider×GPU×config) 吞吐/成本模型(含不确定性界)→ 窗口约束下持续重规划 → 跨 provider(reserved+neocloud+spot)→ reserved 兜底。每个单点都有先例(§2.4),合取没有。
+
+**Minimal claim(直接可用于 intro)**:
+> *"A batch LLM inference control plane can convert a known-upfront, deadline-bound workload's own request-shape strata into zero-waste probes — every probe result is a delivered response — to calibrate per-(provider×GPU×config) throughput/cost models online and continuously replan the remaining requests; a capability unavailable to online-serving systems (no future workload visibility) and unused by prior cloud-config-search work (which pays for probing via proxy/offline runs)."*
+
+**审稿反驳清单(合并两轮查新,按危险度排;每条配 defusal 实验)**:
+1. *"就是 Can't-Be-Late/SkyNomad 贴 LLM 标签"* → 把 Can't-Be-Late switch policy 实装为单目标退化基线;§2.5-4 的"可用性≠吞吐"图正面拆 SkyNomad。
+2. *"SageServe 已做 deadline+异构 ILP"* → forecast-only ILP 限单 provider 作基线;漂移下静态 forecast 失效而在线校准纠正。
+3. *"Task-Sampling (2108.10464) 已做 productive 采样"* → 强调它同构单集群/JCT-only/无分层/非 LLM;用 §2.5-3 分层 ablation 展示 shape 异质使无分层失效。
+4. *"CherryPick/Ernest/AQP 换皮"* → §2.5-2 零浪费 ablation(一次性场景无 recurrence 可摊销,零浪费 load-bearing);AQP 无外部异构市场/无 $/deadline;reserved 兜底(市场风险对冲)无 AQP 类比。
+5. *"多 provider 是工程不是研究"* → 消融隔离"校准算法 + 窗口保证机制"于连接器层之外(合成 provider 上复跑);给窗口保证性质的 proof sketch。
+6. *"neocloud 价格波动不可复现"* → 发布带时间戳的价格/容量 trace,trace-driven replay,多历史窗口重复 + 波动敏感性图。
+7. *"分层抽样 trivial / 有偏"* → 展示这是**统计×调度联合问题**(校准最优配额 ≠ 零浪费约束下的配额,调度器须在线调和二者);乐观/悲观界 + 置信晋升 + 兜底把"估不准"转化为"多花点 reserved",不 miss 窗口。
+
+**Freshness 风险登记册(持续盯,尽快 arXiv 占旗)**:
+- **Demystifying Cost-Efficiency over Heterogeneous GPUs (2502.00722)** —— 直接压 C1 的静态部分;C1 必须以**漂移时间序列 + profile 过期速率**差异化。
+- **ShuntServe (2606.18600)**:spot+异构 LLM serving(单集群、无 deadline)——中威胁。
+- **Coral (2605.04357)**、**Scheduling the Unschedulable (2604.06970)**:相邻但分别是 online serving / 请求级调度——中低。
+- **Budgeted Multi-Objective Bandits for LLM Config Evaluation (2608.04333)**:方法论近邻(预算化配置评估的 bandit/regret 框架)——**当 related-work 锚点用**,也是把 probe 配额做成算法结果的理论参照。
+- **SkyNomad camera-ready / SageServe v3**:若前者加吞吐感知、后者加多 provider,delta 收窄。
+
+**两个抬高上限的建议(查新给出的)**:
+1. 把 **"分层 probe 配额分配 × 零浪费约束 × deadline"** 发展成一个真正的算法结果(定理或 regret 界)——这是从"系统+测量"升到"系统+算法"的关键一步,2608.04333 是理论对话对象。
+2. C1 的"profiles go stale"测量是整篇的证据地基,趁早开始采集(价格/容量/吞吐三条时间序列)。
+
+**Venue 校准(比此前更准)**:**SoCC / ATC 最贴**(云资源经济学 + 测量支撑的机制,CherryPick/Selecta/Can't-Be-Late 一脉);**EuroSys 可行但需真实多云部署**;**ASPLOS 是 stretch**(这是调度/控制面/测量贡献,非体系结构协同设计)——除非把建议 1 的算法核做硬。
 
 ---
 
@@ -107,4 +135,5 @@ Baselines:静态 profile+ILP(自家 melange 求解器)/ oracle profile(上界)/ 
 - 你的三点收敛为:**② profiling = 核心机制(升级为 productive)、① window optimizer = 决策层、③ 容错 = 地基**。
 - temporal P/D、共置、KV 迁移全部出局(已成文/已降级/已消耗)。
 - blog 是 motivation + C1 种子;melange 是内部 baseline;所有组件都是 repo 已预留的 TODO。
-- venue:EuroSys/SoCC 主投;工程每一步同时是产品改进。
+- novelty 判决:**部分新颖,合取无人占**;最近祖先 = Task-Sampling (2108.10464),已列 defusal。
+- venue:**SoCC / EuroSys 主投,ATC 备**;ASPLOS 仅当把"分层 probe 配额 × 零浪费 × deadline"做成硬算法核才够得着。工程每一步同时是产品改进。
