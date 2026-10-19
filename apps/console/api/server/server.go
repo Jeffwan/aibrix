@@ -252,6 +252,12 @@ func (s *Server) StartHTTP(httpAddr, grpcAddr string) error {
 		return err
 	}
 
+	// Register the Kubernetes-backed ModelClaim BFF.
+	modelClaimHandler := handler.NewModelClaimHandler(s.clusterClients)
+	if err := modelClaimHandler.RegisterRoutes(mux); err != nil {
+		return err
+	}
+
 	// Register auth routes
 	s.auth.RegisterAuthRoutes(mux)
 
